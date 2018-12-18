@@ -1,7 +1,7 @@
 # qrcode.py
 #coding:utf-8
 
-#from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw
 
 aa = 'abbdbdbbf'
 bb = 'a海'
