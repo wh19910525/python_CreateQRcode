@@ -1,27 +1,13 @@
-# qrcode.py
+#!/usr/bin/python
 #coding:utf-8
 
 from PIL import Image, ImageDraw
 from numpy import *;
 
+import logger
+
 aa = 'abbdbdbbf'
 
-# Byte mode prefix 0100.
-bitstring = ''
-data = '3'
-# Character count in 8 binary bits.
-for c in data:
-    bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
-
-bitstring += '0000'
-print "bitstring=%r" % bitstring
-res = list()
-# Convert string to byte numbers.
-while bitstring:
-    res.append(int(bitstring[:8], 2))
-    bitstring = bitstring[8:]
-
-print "res=%r" % res
 print "----------- start, %r -----------" % aa.count('b')
 
 class CapacityOverflowException(Exception):
@@ -41,6 +27,13 @@ class CapacityOverflowException(Exception):
     filename      :保存文件名
 '''
 def _genImage(bitmap, qrcodesize, filename):
+    print "----------- start ----------"
+    logger.MY_INFO("")
+    logger.MY_INFO('hi nexgo')
+    #logger.MY_INFO_01('')
+    #logger.MY_INFO_01('hi nexgo')
+    print "-----------  end  ----------"
+
     width = qrcodesize
     height = qrcodesize
     '''
@@ -182,4 +175,5 @@ print "------------ end, %r ------------" % aa.count('b')
 test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 
 _genImage(test, 240, 'test.png')
+
 

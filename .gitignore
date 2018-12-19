@@ -1,3 +1,5 @@
 *.swp
 *.png
 *.jpg
+*.pyc
+*.log
