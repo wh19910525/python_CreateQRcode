@@ -6,6 +6,22 @@ from numpy import *;
 
 aa = 'abbdbdbbf'
 
+# Byte mode prefix 0100.
+bitstring = ''
+data = '3'
+# Character count in 8 binary bits.
+for c in data:
+    bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
+
+bitstring += '0000'
+print "bitstring=%r" % bitstring
+res = list()
+# Convert string to byte numbers.
+while bitstring:
+    res.append(int(bitstring[:8], 2))
+    bitstring = bitstring[8:]
+
+print "res=%r" % res
 print "----------- start, %r -----------" % aa.count('b')
 
 class CapacityOverflowException(Exception):
@@ -76,6 +92,54 @@ def _encode(data):
     if len(data) > 17:
         raise CapacityOverflowException(
                 'Error: Version 1 QR code encodes no more than 17 characters.')
+
+    #
+    # 1. 添加 模式指示符;
+    # Byte mode prefix 0100.
+    #
+    bitstring = '0100'
+
+    #
+    # 2. 添加 字符数指示符;
+    # Character count in 8 binary bits.
+    #
+    bitstring += '{:08b}'.format(len(data))
+
+    #
+    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
+    # Encode every character in ISO-8859-1 in 8 binary bits.
+    #
+    for c in data:
+        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
+
+    #
+    # 4. 添加终止符
+    # Terminator 0000.
+    #
+    bitstring += '0000'
+
+    res = list()
+    #
+    # 5. 把 每8位 二进制数据 转换为 整数;
+    # Convert string to byte numbers.
+    #
+    while bitstring:
+        res.append(int(bitstring[:8], 2))
+        bitstring = bitstring[8:]
+
+    #
+    # 6. 如果编码后的数据不足版本及纠错级别的最大容量, 则在尾部补充 "11101100" 和 "00010001"
+    # Add padding pattern.
+    #
+    while len(res) < 19:
+        res.append(int('11101100', 2))
+        res.append(int('00010001', 2))
+
+    #
+    # 7. 截取 前19个字符
+    # Slice to 19 bytes for V1-L.
+    #
+    res = res[:19]
 
 '''
 将 数据填充到模板中
