@@ -22,17 +22,17 @@ MY_TAG = 'wanghai_debug'
 '''
 ENABLE_DEBUG = True
 
-def MY_INFO(print_info=''):
-    output_info(print_info)
+def MY_INFO(format_str='', *args):
+    output_info(format_str % args)
 
-def INFO(print_info=''):
-    output_info(print_info)
+def INFO(format_str='', *args):
+    output_info(format_str % args)
 
-def my_info(print_info=''):
-    output_info(print_info)
+def my_info(format_str='', *args):
+    output_info(format_str % args)
 
-def info(print_info=''):
-    output_info(print_info)
+def info(format_str='', *args):
+    output_info(format_str % args)
 
 def MY_DEBUG(print_info=''):
     if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
@@ -46,9 +46,9 @@ def DBG(print_info=''):
     if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
         output_info(print_info)
 
-def dbg(print_info=''):
+def dbg(format_str='', *args):
     if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
-        output_info(print_info)
+        output_info(format_str % args)
 
 def my_debug(print_info=''):
     if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
@@ -67,7 +67,7 @@ def isset(v):
    else :
      return True
 
-def output_info(print_info):
+def output_info(print_info=''):
     #use_exception = ''
 
     if vars().has_key('use_exception'):
@@ -88,4 +88,8 @@ def output_info(print_info):
     else:
         print "%s, file=[%s], @%s, line=%s, %s" % \
                 (MY_TAG, f.f_code.co_filename, f.f_code.co_name, f.f_lineno, print_info)
+
+
+
+
 
