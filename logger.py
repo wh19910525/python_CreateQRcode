@@ -6,18 +6,20 @@ import time
 
 MY_TAG = 'wanghai_debug'
 def MY_INFO(print_info=''):
+    output_info(print_info)
+
+def output_info(print_info):
     #use_exception = ''
 
-    #if isset('use_exception'):
     if vars().has_key('use_exception'):
-        #print "use exception."
+        print "use exception."
         try:
             raise Exception
         except:
-            f = sys.exc_info()[2].tb_frame.f_back
+            f = sys.exc_info()[2].tb_frame.f_back.f_back
     else:
-        #print "use sys."
-        f = sys._getframe().f_back
+        print "use sys."
+        f = sys._getframe().f_back.f_back
 
     if print_info == '':
         print "%s, Time=[%s], file=[%s], @%s, line=%s" % \
