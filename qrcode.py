@@ -6,7 +6,11 @@ from numpy import *;
 
 import logger
 
-#logger.ENABLE_DEBUG = False
+logger.ENABLE_DEBUG = True
+#logger.PRINT_TAG = True
+#logger.PRINT_BUILDTIME = True
+#logger.PRINT_FILENAME = True
+
 
 aa = 'abbdbdbbf'
 
@@ -106,7 +110,7 @@ class CapacityOverflowException(Exception):
     filename      :保存文件名
 '''
 def _genImage(bitmap, qrcodesize, filename):
-    logger.dbg()
+    logger.dbg("hi")
 
     width = qrcodesize
     height = qrcodesize

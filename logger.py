@@ -1,6 +1,9 @@
 #!/usr/bin/python
 # coding: utf-8
 
+import sys
+import time
+
 '''
 使用方法:
 
@@ -12,16 +15,24 @@ logger.DBG('hi nexgo')
 
 '''
 
-import sys
-import time
-
 MY_TAG = 'wanghai_debug'
 
+###############################################
 '''
-控制log输出开关;
+控制log的 输出开关;
 '''
 ENABLE_DEBUG = True
 
+'''
+控制相关的log输出开关
+'''
+PRINT_TAG=False
+
+PRINT_BUILDTIME=False
+
+PRINT_FILENAME=False
+
+###############################################
 def MY_INFO(format_str='', *args):
     output_info(format_str % args)
 
@@ -34,6 +45,7 @@ def my_info(format_str='', *args):
 def info(format_str='', *args):
     output_info(format_str % args)
 
+###############################################
 def MY_DEBUG(print_info=''):
     if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
         output_info(print_info)
@@ -77,19 +89,26 @@ def output_info(print_info=''):
         except:
             f = sys.exc_info()[2].tb_frame.f_back.f_back
     else:
-        #print "use sys."
+        print "use sys."
         f = sys._getframe().f_back.f_back
 
+    output_str = ''
+
+    if PRINT_TAG:
+        output_str += "%s, " % (MY_TAG)
+
+    if PRINT_BUILDTIME:
+        output_str += "Time=[%s], " % (time.strftime("%Y-%m-%d, %H:%M:%S"))
+
+    if PRINT_FILENAME:
+        output_str += "file=[%s], " % (f.f_code.co_filename)
+        #output_str += "file=[%s], " % (__file__)
+
     if print_info == '':
-        print "%s, Time=[%s], file=[%s], @%s, line=%s" % \
-                (MY_TAG, time.strftime("%Y-%m-%d, %H:%M:%S"), f.f_code.co_filename, f.f_code.co_name, f.f_lineno)
-
-        #print "file=[%s]" % (__file__)
+        output_str += "@%s, line=%s" % (f.f_code.co_name, f.f_lineno)
     else:
-        print "%s, file=[%s], @%s, line=%s, %s" % \
-                (MY_TAG, f.f_code.co_filename, f.f_code.co_name, f.f_lineno, print_info)
+        output_str += "@%s, line=%s, %s" % (f.f_code.co_name, f.f_lineno, print_info)
 
-
-
+    print output_str
 
 
