@@ -1,24 +1,83 @@
 #!/usr/bin/python
 # coding: utf-8
 
+'''
+使用方法:
+
+import logger
+
+logger.ENABLE_DEBUG = False
+
+logger.DBG('hi nexgo')
+
+'''
+
 import sys
 import time
 
 MY_TAG = 'wanghai_debug'
+
+'''
+控制log输出开关;
+'''
+ENABLE_DEBUG = True
+
 def MY_INFO(print_info=''):
     output_info(print_info)
+
+def INFO(print_info=''):
+    output_info(print_info)
+
+def my_info(print_info=''):
+    output_info(print_info)
+
+def info(print_info=''):
+    output_info(print_info)
+
+def MY_DEBUG(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+def DEBUG(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+def DBG(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+def dbg(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+def my_debug(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+def debug(print_info=''):
+    if isset('ENABLE_DEBUG') and ENABLE_DEBUG:
+        output_info(print_info)
+
+###############################################
+def isset(v):
+   try :
+     type (eval(v))
+   except :
+     return False
+   else :
+     return True
 
 def output_info(print_info):
     #use_exception = ''
 
     if vars().has_key('use_exception'):
-        print "use exception."
+        #print "use exception."
         try:
             raise Exception
         except:
             f = sys.exc_info()[2].tb_frame.f_back.f_back
     else:
-        print "use sys."
+        #print "use sys."
         f = sys._getframe().f_back.f_back
 
     if print_info == '':

@@ -6,6 +6,8 @@ from numpy import *;
 
 import logger
 
+logger.ENABLE_DEBUG = False
+
 aa = 'abbdbdbbf'
 
 print "----------- start, %r -----------" % aa.count('b')
@@ -28,10 +30,8 @@ class CapacityOverflowException(Exception):
 '''
 def _genImage(bitmap, qrcodesize, filename):
     print "----------- start ----------"
-    logger.MY_INFO("")
-    logger.MY_INFO('hi nexgo')
-    #logger.MY_INFO_01('')
-    #logger.MY_INFO_01('hi nexgo')
+    logger.MY_DEBUG("")
+    logger.dbg('hi nexgo')
     print "-----------  end  ----------"
 
     width = qrcodesize
