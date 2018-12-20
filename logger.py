@@ -89,7 +89,7 @@ def output_info(print_info=''):
         except:
             f = sys.exc_info()[2].tb_frame.f_back.f_back
     else:
-        print "use sys."
+        #print "use sys."
         f = sys._getframe().f_back.f_back
 
     output_str = ''

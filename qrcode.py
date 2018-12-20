@@ -16,6 +16,68 @@ aa = 'abbdbdbbf'
 
 print "----------- start, %r -----------" % aa.count('b')
 
+
+
+def _transpose(mat):
+    '''Transpose a matrix'''
+    res = [[mat[j][i] for j in range(len(mat))] for i in range(len(mat[0]))]
+    return res
+
+def _timSeq(len, vertical=False):
+    '''
+    Generate a horizontal, unless specified vertical
+    timing sequence with alternating dark and light
+    pixels with length len.
+    '''
+    res = [[i % 2 for i in range(len)]]
+    if vertical:
+        res = _transpose(res)
+    return res
+
+    # Finder pattern.
+    _finder = _matCp(_matCp([[_DARK for i in range(3)] for j in range(3)],
+        [[_LIGHT for i in range(5)] for j in range(5)], 1, 1),
+        [[_DARK for i in range(7)] for j in range(7)], 1, 1)
+
+    # Alignment pattern. Not used in version 1.
+    _align = _matCp(_matCp([[_DARK]],
+        [[_LIGHT for i in range(3)] for j in range(3)], 1, 1),
+        [[_DARK for i in range(5)] for j in range(5)], 1, 1)
+
+    # Version 1 QR code template with fixed patterns.
+    _ver1 = [[_LIGHT for i in range(21)] for j in range(21)]
+    _ver1 = _matCp(_finder, _ver1, 0, 0)
+    _ver1 = _matCp(_finder, _ver1, 14, 0)
+    _ver1 = _matCp(_finder, _ver1, 0, 14)
+    _ver1 = _matCp(_timSeq(5), _ver1, 6, 8)
+    _ver1 = _matCp(_timSeq(5, vertical=True), _ver1, 8, 6)
+    _ver1 = _matCp([[_DARK]], _ver1, 13, 8)
+
+def _matCp(src, dst, top, left):
+    '''
+    Copy the content of matrix src into matrix dst.
+    The top-left corner of src is positioned at (left, top)
+    in dst.
+    '''
+    res = copy.deepcopy(dst)
+    for j in range(len(src)):
+        for i in range(len(src[0])):
+            res[top+j][left+i] = src[j][i]
+    return res
+
+def _fillByte(byte, downwards=False):
+    '''
+    Fill a byte into a 2 by 4 matrix upwards,
+    unless specified downwards.
+    '''
+    bytestr = '{:08b}'.format(byte)
+    res = [[0, 0], [0, 0], [0, 0], [0, 0]]
+    for i in range(8):
+        res[i/2][i%2] = not int(bytestr[7-i])
+    if downwards:
+        res = res[::-1]
+    return res
+
 def _gfpMul(x, y, prim=0x11d, field_charac_full=256, carryless=True):
     '''Galois field GF(2^8) multiplication.'''
     r = 0
@@ -91,6 +153,9 @@ def _rsEncode(bitstring, nsym):
             for j in range(1, len(gen)):
                 res[i+j] ^= _gfMul(gen[j], coef)
     res[:len(bitstring)] = bitstring
+
+    logger.dbg("data-len:%d, data=\n\t%r\n", len(res), res)
+
     return res
 
 class CapacityOverflowException(Exception):
@@ -110,7 +175,7 @@ class CapacityOverflowException(Exception):
     filename      :保存文件名
 '''
 def _genImage(bitmap, qrcodesize, filename):
-    logger.dbg("hi")
+    logger.dbg()
 
     width = qrcodesize
     height = qrcodesize
@@ -152,79 +217,37 @@ def _fmtEncode(fmt):
     '''Encode format code.'''
     pass
 
-'''
-编码数据
-'''
-def _encode(data):
-    '''
-    Encode the input data stream.
-    Add mode prefix, encode data using ISO-8859-1,
-    group data, add padding suffix, and call RS encoding method.
-    '''
-    if len(data) > 17:
-        raise CapacityOverflowException(
-                'Error: Version 1 QR code encodes no more than 17 characters.')
-
-    #
-    # 1. 添加 模式指示符;
-    # Byte mode prefix 0100.
-    #
-    bitstring = '0100'
-
-    #
-    # 2. 添加 字符数指示符;
-    # Character count in 8 binary bits.
-    #
-    bitstring += '{:08b}'.format(len(data))
-
-    #
-    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
-    # Encode every character in ISO-8859-1 in 8 binary bits.
-    #
-    for c in data:
-        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
-
-    #
-    # 4. 添加终止符
-    # Terminator 0000.
-    #
-    bitstring += '0000'
-
-    res = list()
-    #
-    # 5. 把 每8位 二进制数据 转换为 整数;
-    # Convert string to byte numbers.
-    #
-    while bitstring:
-        res.append(int(bitstring[:8], 2))
-        bitstring = bitstring[8:]
-
-    #
-    # 6. 如果编码后的数据不足版本及纠错级别的最大容量, 则在尾部补充 "11101100" 和 "00010001"
-    # Add padding pattern.
-    #
-    while len(res) < 19:
-        res.append(int('11101100', 2))
-        res.append(int('00010001', 2))
-
-    #
-    # 7. 截取 前19个字符
-    # Slice to 19 bytes for V1-L.
-    #
-    res = res[:19]
-
-    #
-    # 8. 添加 7 bit EC;
-    # Call _rsEncode to add 7 EC bits.
-    #
-    return _rsEncode(res, 7)
 
 '''
 将 数据填充到模板中
 '''
 def _fillData(bitstream):
     '''Fill the encoded data into the template QR code matrix'''
-    pass
+    res = copy.deepcopy(_ver1)
+    for i in range(15):
+        res = _matCp(_fillByte(bitstream[i], (i/3)%2!=0),
+            res,
+            21-4*((i%3-1)*(-1)**((i/3)%2)+2),
+            21-2*(i/3+1))
+    tmp = _fillByte(bitstream[15])
+    res = _matCp(tmp[2:], res, 7, 11)
+    res = _matCp(tmp[:2], res, 4, 11)
+    tmp = _fillByte(bitstream[16])
+    res = _matCp(tmp, res, 0, 11)
+    tmp = _fillByte(bitstream[17], True)
+    res = _matCp(tmp, res, 0, 9)
+    tmp = _fillByte(bitstream[18], True)
+    res = _matCp(tmp[:2], res, 4, 9)
+    res = _matCp(tmp[2:], res, 7, 9)
+    for i in range(3):
+        res = _matCp(_fillByte(bitstream[19+i], True),
+            res, 9+4*i, 9)
+    tmp = _fillByte(bitstream[22])
+    res = _matCp(tmp, res, 9, 7)
+    for i in range(3):
+        res = _matCp(_fillByte(bitstream[23+i], i%2==0),
+            res, 9, 4-2*i)
+    return res
 
 '''
 应用掩码
@@ -255,10 +278,88 @@ def _genBitmap(bitstream):
     '''
     return _fillInfo(_mask(_fillData(bitstream)))
 
+'''
+编码数据
+'''
+def _encode(data):
+    '''
+    Encode the input data stream.
+    Add mode prefix, encode data using ISO-8859-1,
+    group data, add padding suffix, and call RS encoding method.
+    '''
+    logger.dbg()
+
+    if len(data) > 17:
+        raise CapacityOverflowException(
+                'Error: Version 1 QR code encodes no more than 17 characters.')
+
+    #
+    # 1. 添加 模式指示符;
+    # Byte mode prefix 0100.
+    #
+    bitstring = '0100'
+    logger.dbg("byte mode=\n\t%r\n", bitstring)
+
+    #
+    # 2. 添加 字符数指示符;
+    # Character count in 8 binary bits.
+    #
+    bitstring += '{:08b}'.format(len(data))
+    logger.dbg("byte mode + char cnt=\n\t%r\n", bitstring)
+
+    #
+    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
+    # Encode every character in ISO-8859-1 in 8 binary bits.
+    #
+    for c in data:
+        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
+    logger.dbg("byte mode + char cnt + data=\n\t%r\n", bitstring)
+
+    #
+    # 4. 添加终止符
+    # Terminator 0000.
+    #
+    bitstring += '0000'
+    logger.dbg("byte mode + char cnt + data + terminater=\n\t%r\n", bitstring)
+
+    res = list()
+    #
+    # 5. 把 每8位 二进制数据 转换为 整数;
+    # Convert string to byte numbers.
+    #
+    while bitstring:
+        res.append(int(bitstring[:8], 2))
+        bitstring = bitstring[8:]
+    logger.dbg("convert byte to int=\n\t%r\n", res)
+
+    #
+    # 6. 如果编码后的数据不足版本及纠错级别的最大容量, 则在尾部补充 "11101100" 和 "00010001"
+    # Add padding pattern.
+    #
+    while len(res) < 19:
+        res.append(int('11101100', 2))
+        res.append(int('00010001', 2))
+
+    #
+    # 7. 截取 前19个字符
+    # Slice to 19 bytes for V1-L.
+    #
+    res = res[:19]
+
+    logger.dbg("value:1~19, data=\n\t%r\n", res)
+
+    #
+    # 8. 添加 7 bit EC;
+    # Call _rsEncode to add 7 EC bits.
+    #
+    return _rsEncode(res, 7)
+
+
 print "------------ end, %r ------------" % aa.count('b')
 
 test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 
-_genImage(test, 240, 'test.png')
+#_genImage(test, 240, 'test.png')
+_encode('1')
 
 
