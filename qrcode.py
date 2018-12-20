@@ -2,7 +2,9 @@
 #coding:utf-8
 
 from PIL import Image, ImageDraw
-from numpy import *;
+#from numpy import *;
+import copy
+import sys
 
 import logger
 
@@ -12,71 +14,116 @@ logger.ENABLE_DEBUG = True
 #logger.PRINT_FILENAME = True
 
 
-aa = 'abbdbdbbf'
 
-print "----------- start, %r -----------" % aa.count('b')
+print "------------ start ------------"
 
+'''
+0:对应黑色, 1:对应白色
+'''
+_DARK = 0
+_LIGHT = 1
 
 
 def _transpose(mat):
-    '''Transpose a matrix'''
+    '''
+    转换矩阵, 例如: 1x5 --> 5x1
+
+    Transpose a matrix
+    '''
     res = [[mat[j][i] for j in range(len(mat))] for i in range(len(mat[0]))]
     return res
 
-def _timSeq(len, vertical=False):
+def _timSeq(time_len, vertical=False):
     '''
+    创建 定位图形 矩阵
+
     Generate a horizontal, unless specified vertical
     timing sequence with alternating dark and light
-    pixels with length len.
+    pixels with length time_len.
     '''
-    res = [[i % 2 for i in range(len)]]
+    res = [[i % 2 for i in range(time_len)]]
+    #logger.dbg("time-len=%d, data=%r", len(res), res)
+
     if vertical:
         res = _transpose(res)
+        #logger.dbg("vertical-time-len=%d, data=%r", len(res), res)
+
     return res
-
-    # Finder pattern.
-    _finder = _matCp(_matCp([[_DARK for i in range(3)] for j in range(3)],
-        [[_LIGHT for i in range(5)] for j in range(5)], 1, 1),
-        [[_DARK for i in range(7)] for j in range(7)], 1, 1)
-
-    # Alignment pattern. Not used in version 1.
-    _align = _matCp(_matCp([[_DARK]],
-        [[_LIGHT for i in range(3)] for j in range(3)], 1, 1),
-        [[_DARK for i in range(5)] for j in range(5)], 1, 1)
-
-    # Version 1 QR code template with fixed patterns.
-    _ver1 = [[_LIGHT for i in range(21)] for j in range(21)]
-    _ver1 = _matCp(_finder, _ver1, 0, 0)
-    _ver1 = _matCp(_finder, _ver1, 14, 0)
-    _ver1 = _matCp(_finder, _ver1, 0, 14)
-    _ver1 = _matCp(_timSeq(5), _ver1, 6, 8)
-    _ver1 = _matCp(_timSeq(5, vertical=True), _ver1, 8, 6)
-    _ver1 = _matCp([[_DARK]], _ver1, 13, 8)
 
 def _matCp(src, dst, top, left):
     '''
+    把 矩阵src 拷贝到 矩阵dst里, 起始点(left, top)
+
     Copy the content of matrix src into matrix dst.
     The top-left corner of src is positioned at (left, top)
     in dst.
     '''
+
+    logger.dbg("top=%r, left=%r", top, left)
+    #logger.dbg("src-len=%r\ndata=%r", len(src), src)
+    #logger.dbg("dst-len=%r\ndata=%r", len(dst), dst)
+
     res = copy.deepcopy(dst)
+
     for j in range(len(src)):
         for i in range(len(src[0])):
+            #logger.dbg("j=%r, i=%r\n", j, i)
             res[top+j][left+i] = src[j][i]
+
+    #logger.dbg("last-len=%r\n\tdata=%r\n", len(res), res)
     return res
 
-def _fillByte(byte, downwards=False):
-    '''
-    Fill a byte into a 2 by 4 matrix upwards,
-    unless specified downwards.
-    '''
-    bytestr = '{:08b}'.format(byte)
-    res = [[0, 0], [0, 0], [0, 0], [0, 0]]
-    for i in range(8):
-        res[i/2][i%2] = not int(bytestr[7-i])
-    if downwards:
-        res = res[::-1]
-    return res
+'''
+创建 位置探测图形 矩阵
+
+Finder pattern.
+'''
+_finder = _matCp(
+        _matCp(
+            [[_DARK for i in range(3)] for j in range(3)],
+            [[_LIGHT for i in range(5)] for j in range(5)],
+            1,
+            1),
+        [[_DARK for i in range(7)] for j in range(7)],
+        1,
+        1)
+
+'''
+创建 校正图形 矩阵
+
+Alignment pattern. Not used in version 1.
+'''
+_align = _matCp(
+        _matCp([[_DARK]],
+            [[_LIGHT for i in range(3)] for j in range(3)],
+            1,
+            1),
+        [[_DARK for i in range(5)] for j in range(5)],
+        1,
+        1)
+
+'''
+初始化一个 21x21的 白色矩阵
+'''
+# Version 1 QR code template with fixed patterns.
+_ver1 = [[_LIGHT for i in range(21)] for j in range(21)]
+#logger.dbg("verl-len=%r", len(_ver1))
+#logger.dbg("finder-len=%r", len(_finder))
+
+# 添加 左上角
+_ver1 = _matCp(_finder, _ver1, 0, 0)
+# 添加 右上角
+_ver1 = _matCp(_finder, _ver1, len(_ver1)-len(_finder), 0)
+# 添加 左下角
+_ver1 = _matCp(_finder, _ver1, 0, len(_ver1)-len(_finder))
+
+# 添加 水平 定位图形
+_ver1 = _matCp(_timSeq(len(_ver1)-len(_finder)-len(_finder)-2), _ver1, 6, 8)
+# 添加 垂直 定位图形
+_ver1 = _matCp(_timSeq(len(_ver1)-len(_finder)-len(_finder)-2, vertical=True), _ver1, 8, 6)
+
+# 添加 固定的 一个黑点
+_ver1 = _matCp([[_DARK]], _ver1, len(_ver1)-len(_finder)-1, len(_finder)+1)
 
 def _gfpMul(x, y, prim=0x11d, field_charac_full=256, carryless=True):
     '''Galois field GF(2^8) multiplication.'''
@@ -188,13 +235,11 @@ def _genImage(bitmap, qrcodesize, filename):
     drw = ImageDraw.Draw(img)
 
     # Normalized pixel width.
-    logger.dbg("bitmap=%r", len(bitmap))
-    print "bitmap-len=%r" % (len(bitmap))
-    print "bitmap-len=%r" % (bitmap)
+    logger.dbg("block:%rx%r", len(bitmap), len(bitmap))
 
     #用图像宽度 除以 矩阵维度得到 QR码中一个单位对应的像素数
     a_unit_size = qrcodesize / len(bitmap)
-    print "a-rectangle-size=%r" % (a_unit_size)
+    logger.dbg("a-rectangle-size=%r", a_unit_size)
 
     for y in range(width):
         # Normalized y coordinate in bitmap
@@ -218,36 +263,6 @@ def _fmtEncode(fmt):
     pass
 
 
-'''
-将 数据填充到模板中
-'''
-def _fillData(bitstream):
-    '''Fill the encoded data into the template QR code matrix'''
-    res = copy.deepcopy(_ver1)
-    for i in range(15):
-        res = _matCp(_fillByte(bitstream[i], (i/3)%2!=0),
-            res,
-            21-4*((i%3-1)*(-1)**((i/3)%2)+2),
-            21-2*(i/3+1))
-    tmp = _fillByte(bitstream[15])
-    res = _matCp(tmp[2:], res, 7, 11)
-    res = _matCp(tmp[:2], res, 4, 11)
-    tmp = _fillByte(bitstream[16])
-    res = _matCp(tmp, res, 0, 11)
-    tmp = _fillByte(bitstream[17], True)
-    res = _matCp(tmp, res, 0, 9)
-    tmp = _fillByte(bitstream[18], True)
-    res = _matCp(tmp[:2], res, 4, 9)
-    res = _matCp(tmp[2:], res, 7, 9)
-    for i in range(3):
-        res = _matCp(_fillByte(bitstream[19+i], True),
-            res, 9+4*i, 9)
-    tmp = _fillByte(bitstream[22])
-    res = _matCp(tmp, res, 9, 7)
-    for i in range(3):
-        res = _matCp(_fillByte(bitstream[23+i], i%2==0),
-            res, 9, 4-2*i)
-    return res
 
 '''
 应用掩码
@@ -278,11 +293,10 @@ def _genBitmap(bitstream):
     '''
     return _fillInfo(_mask(_fillData(bitstream)))
 
-'''
-编码数据
-'''
 def _encode(data):
     '''
+    编码数据, 返回 一维 整数矩阵
+
     Encode the input data stream.
     Add mode prefix, encode data using ISO-8859-1,
     group data, add padding suffix, and call RS encoding method.
@@ -349,17 +363,88 @@ def _encode(data):
     logger.dbg("value:1~19, data=\n\t%r\n", res)
 
     #
-    # 8. 添加 7 bit EC;
+    # 8. 添加 7 个 EC;
     # Call _rsEncode to add 7 EC bits.
     #
     return _rsEncode(res, 7)
 
+def _fillByte(byte, downwards=False):
+    '''
+     Upwards         Downwards
+    ---------        ---------   
+    | 0 | 1 |        | 6 | 7 |    
+    ---------        ---------   
+    | 2 | 3 |        | 4 | 5 |    
+    ---------        ---------   
+    | 4 | 5 |        | 2 | 3 |    
+    ---------        ---------   
+    | 6 | 7 |        | 0 | 1 |    
+    ---------        ---------   
 
-print "------------ end, %r ------------" % aa.count('b')
+    Fill a byte into a 2 by 4 matrix upwards,
+    unless specified downwards.
+    '''
+    bytestr = '{:08b}'.format(byte)
+    res = [[0, 0], [0, 0], [0, 0], [0, 0]]
 
-test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
+    for i in range(8):
+        res[i/2][i%2] = not int(bytestr[7-i])
 
+    logger.dbg("a-byte-len=%d, data=%r", len(res), res)
+    if downwards:
+        res = res[::-1]
+        logger.dbg("revers:len=%d, data=%r", len(res), res)
+
+    #print "\n"
+    return res
+
+def _fillData(bitstream):
+    '''
+    将 数据填充到模板中
+
+    Fill the encoded data into the template QR code matrix
+    '''
+    res = copy.deepcopy(_ver1)
+
+    for i in range(15):
+        res = _matCp(_fillByte(bitstream[i], (i/3)%2!=0),
+            res,
+            21-4*((i%3-1)*(-1)**((i/3)%2)+2),
+            21-2*(i/3+1))
+
+    #sys.exit()
+
+    tmp = _fillByte(bitstream[15])
+    res = _matCp(tmp[2:], res, 7, 11)
+    res = _matCp(tmp[:2], res, 4, 11)
+    tmp = _fillByte(bitstream[16])
+    res = _matCp(tmp, res, 0, 11)
+    tmp = _fillByte(bitstream[17], True)
+    res = _matCp(tmp, res, 0, 9)
+    tmp = _fillByte(bitstream[18], True)
+    res = _matCp(tmp[:2], res, 4, 9)
+    res = _matCp(tmp[2:], res, 7, 9)
+    for i in range(3):
+        res = _matCp(_fillByte(bitstream[19+i], True),
+            res, 9+4*i, 9)
+    tmp = _fillByte(bitstream[22])
+    res = _matCp(tmp, res, 9, 7)
+    for i in range(3):
+        res = _matCp(_fillByte(bitstream[23+i], i%2==0),
+            res, 9, 4-2*i)
+
+    return res
+
+print "------------ end ------------"
+
+################### main #####################
+#test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 #_genImage(test, 240, 'test.png')
-_encode('1')
+
+data = 'test'
+filledMat = _fillData(_encode(data))
+_genImage(filledMat, 210, "test01.png")
+
+
 
 
