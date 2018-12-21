@@ -262,7 +262,100 @@ def _fmtEncode(fmt):
     '''Encode format code.'''
     pass
 
-
+def _penalty(mat):
+    '''
+    Calculate penalty score for a masked matrix.
+    N1: penalty for more than 5 consecutive pixels in row/column,
+        3 points for each occurrence of such pattern,
+        and extra 1 point for each pixel exceeding 5
+        consecutive pixels.
+    N2: penalty for blocks of pixels larger than 2x2.
+        3*(m-1)*(n-1) points for each block of mxn
+        (larger than 2x2).
+    N3: penalty for patterns similar to the finder pattern.
+        40 points for each occurrence of 1:1:3:1:1 ratio
+        (dark:light:dark:light:dark) pattern in row/column,
+        preceded of followed by 4 consecutive light pixels.
+    N4: penalty for unbalanced dark/light ratio.
+        10*k points where k is the rating of the deviation of
+        the proportion of dark pixels from 50% in steps of 5%.
+    '''
+    # Initialize.
+    n1 = n2 = n3 = n4 = 0
+    # Calculate N1.
+    for j in range(len(mat)):
+        count = 1
+        adj = False
+        for i in range(1, len(mat)):
+            if mat[j][i] == mat[j][i-1]:
+                count += 1
+            else:
+                count = 1
+                adj = False
+            if count >= 5:
+                if not adj:
+                    adj = True
+                    n1 += 3
+                else:
+                    n1 += 1
+    for i in range(len(mat)):
+        count = 1
+        adj = False
+        for j in range(1, len(mat)):
+            if mat[j][i] == mat[j-1][i]:
+                count += 1
+            else:
+                count = 1
+                adj = False
+            if count >= 5:
+                if not adj:
+                    adj = True
+                    n1 += 3
+                else:
+                    n1 += 1
+    # Calculate N2.
+    m = n = 1
+    for j in range(1, len(mat)):
+        for i in range(1, len(mat)):
+            if mat[j][i] == mat[j-1][i] and mat[j][i] == mat[j][i-1] and mat[j][i] == mat[j-1][i-1]:
+                if mat[j][i] == mat[j-1][i]:
+                    m += 1
+                if mat[j][i] == mat[j][i-1]:
+                    n += 1
+            else:
+                n2 += 3 * (m-1) * (n-1)
+                m = n = 1
+    # Calculate N3.
+    count = 0
+    for row in mat:
+        rowstr = ''.join(str(e) for e in row)
+        occurrences = []
+        begin = 0
+        while rowstr.find('0100010', begin) != -1:
+            begin = rowstr.find('0100010', begin) + 7
+            occurrences.append(begin)
+        for begin in occurrences:
+            if rowstr.count('00000100010', begin-4) != 0 or rowstr.count('01000100000', begin) != 0:
+                count += 1
+    transposedMat = _transpose(mat)
+    for row in transposedMat:
+        rowstr = ''.join(str(e) for e in row)
+        occurrences = []
+        begin = 0
+        while rowstr.find('0100010', begin) != -1:
+            begin = rowstr.find('0100010', begin) + 7
+            occurrences.append(begin)
+        for begin in occurrences:
+            if rowstr.count('00000100010', begin-4) != 0 or rowstr.count('01000100000', begin) != 0:
+                count += 1
+    n3 += 40 * count
+    # Calculate N4.
+    dark = sum(row.count(_DARK) for row in mat)
+    percent = int((float(dark) / float(len(mat)**2)) * 100)
+    pre = percent - percent % 5
+    nex = percent + 5 - percent % 5
+    n4 = min(abs(pre-50)/5, abs(nex-50)/5) * 10
+    return n1 + n2 + n3 + n4
 
 '''
 应用掩码
@@ -270,9 +363,17 @@ def _fmtEncode(fmt):
 def _mask(mat):
     '''
     Mask the data QR code matrix with all 8 masks,
+    call _penalty to calculate penalty scores for each
     and select the best mask.
+    Return tuple(selected masked matrix, number of selected mask).
     '''
-    pass
+    maskeds = [_matXor(mat, dataMask) for dataMask in _dataMasks]
+    penalty = [0] * 8
+    for i, masked in enumerate(maskeds):
+        penalty[i] = _penalty(masked)
+    # Find the id of the best mask.
+    index = penalty.index(min(penalty))
+    return maskeds[index], index
 
 '''
 填充格式信息
@@ -491,7 +592,7 @@ _dataAreaMask = _matCp([[_LIGHT for i in range(8)] for j in range(9)],
     _dataAreaMask, 0, 13)
 _dataAreaMask = _matCp([[_LIGHT for i in range(4)]], _dataAreaMask, 6, 9)
 _dataAreaMask = _matCp([[_LIGHT] for i in range(4)], _dataAreaMask, 9, 6)
-logger.dbg("dataArea-Mask-len=%r, data=%r", len(_dataAreaMask), _dataAreaMask)
+#logger.dbg("dataArea-Mask-len=%r, data=%r", len(_dataAreaMask), _dataAreaMask)
 
 # Data masks defined in QR standard.
 _dataMasks = []
@@ -516,10 +617,25 @@ _dataMasks.append(_matAnd(_dataAreaMask,
 _dataMasks.append(_matAnd(_dataAreaMask,
     [[_DARK if ((i+j)%2+(i*j)%3)%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
 
+
 dataMask_000 = _matAnd(_dataAreaMask,
     [[_DARK if (i+j)%2==0 else _LIGHT for i in range(21)] for j in range(21)])
+#logger.dbg("data-Mask-len=%r, data=%r", len(dataMask_000), dataMask_000)
 
-logger.dbg("data-Mask-len=%r, data=%r", len(dataMask_000), dataMask_000)
+def _matXor(mat1, mat2):
+    '''
+    Matrix-wise xor.
+    Dark xor dark -> light
+    Light xor light -> light
+    Dark xor light -> dark
+    Light xor dark -> dark
+    '''
+    res = [[_LIGHT for i in range(len(mat1[0]))] for j in range(len(mat1))]
+    for j in range(len(mat1)):
+        for i in range(len(mat1[0])):
+            res[j][i] = int(mat1[j][i] == mat2[j][i])
+    return res
+
 
 print "------------ end ------------"
 
@@ -527,8 +643,6 @@ print "------------ end ------------"
 '''
 test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 _genImage(test, 240, 'test.png')
-
-#data = '00000000000000000'
 
 data = 'test'
 filledMat = _fillData(_encode(data))
@@ -539,9 +653,19 @@ _genImage(mask, 210, "test01.png")
 
 _genImage(_dataAreaMask, 210, "test01.png")
 
-'''
-
 _genImage(dataMask_000, 210, "test01.png")
+
+'''
+dullData = '00000000000000000'
+
+filledMat = _fillData(_encode(dullData))
+_genImage(filledMat, 210, "test01.png")
+
+filledMat = _fillData(_encode(dullData))
+maskedMat, maskID = _mask(filledMat)
+_genImage(maskedMat, 210, "test02.png")
+
+
 
 
 
