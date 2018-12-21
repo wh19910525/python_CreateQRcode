@@ -259,8 +259,13 @@ def _genImage(bitmap, qrcodesize, filename):
 编码格式信息
 '''
 def _fmtEncode(fmt):
-    '''Encode format code.'''
-    pass
+    '''Encode the 15-bit format code using BCH code.'''
+    g = 0x537
+    code = fmt << 10
+    for i in range(4,-1,-1):
+        if code & (1 << (i+10)):
+            code ^= g << i
+    return ((fmt << 10) ^ code) ^ 0b101010000010010
 
 def _penalty(mat):
     '''
@@ -381,8 +386,21 @@ def _mask(mat):
 def _fillInfo(arg):
     '''
     Fill the encoded format code into the masked QR code matrix.
+    arg: (masked QR code matrix, mask number).
     '''
-    pass
+    mat, mask = arg
+    # 01 is the format code for L error control level,
+    # concatenated with mask id and passed into _fmtEncode
+    # to get the 15 bits format code with EC bits.
+    fmt = _fmtEncode(int('01'+'{:03b}'.format(mask), 2))
+    fmtarr = [[not int(c)] for c in '{:015b}'.format(fmt)]
+    mat = _matCp(_transpose(fmtarr[7:]), mat, 8, 13)
+    mat = _matCp(fmtarr[9:][::-1], mat, 0, 8)
+    mat = _matCp(fmtarr[7:9][::-1], mat, 7, 8)
+    mat = _matCp(fmtarr[:7][::-1], mat, 14, 8)
+    mat = _matCp(_transpose(fmtarr[:6]), mat, 8, 0)
+    mat = _matCp([fmtarr[6]], mat, 8, 7)
+    return mat
 
 '''
 创建最终的QR码矩阵
@@ -636,6 +654,13 @@ def _matXor(mat1, mat2):
             res[j][i] = int(mat1[j][i] == mat2[j][i])
     return res
 
+def qrcode(data, width=210, filename='qrcode.png'):
+    '''Module public interface'''
+    try:
+        _genImage(_genBitmap(_encode(data)), width, filename)
+    except Exception, e:
+        print e
+        raise e
 
 print "------------ end ------------"
 
@@ -655,7 +680,6 @@ _genImage(_dataAreaMask, 210, "test01.png")
 
 _genImage(dataMask_000, 210, "test01.png")
 
-'''
 dullData = '00000000000000000'
 
 filledMat = _fillData(_encode(dullData))
@@ -665,7 +689,9 @@ filledMat = _fillData(_encode(dullData))
 maskedMat, maskID = _mask(filledMat)
 _genImage(maskedMat, 210, "test02.png")
 
-
+logger.dbg("mask-id=%r", maskID)
+'''
+qrcode('Hello world!')
 
 
 
