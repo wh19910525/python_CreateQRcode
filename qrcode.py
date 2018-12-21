@@ -59,7 +59,7 @@ def _matCp(src, dst, top, left):
     in dst.
     '''
 
-    logger.dbg("top=%r, left=%r", top, left)
+    #logger.dbg("top=%r, left=%r", top, left)
     #logger.dbg("src-len=%r\ndata=%r", len(src), src)
     #logger.dbg("dst-len=%r\ndata=%r", len(dst), dst)
 
@@ -381,6 +381,17 @@ def _fillByte(byte, downwards=False):
     | 6 | 7 |        | 0 | 1 |    
     ---------        ---------   
 
+    wanghai
+    ---------        ---------   
+    | 7 | 6 |        | 1 | 0 |    
+    ---------        ---------   
+    | 5 | 4 |        | 3 | 2 |    
+    ---------        ---------   
+    | 3 | 2 |        | 5 | 4 |    
+    ---------        ---------   
+    | 1 | 0 |        | 7 | 6 |    
+    ---------        ---------   
+
     Fill a byte into a 2 by 4 matrix upwards,
     unless specified downwards.
     '''
@@ -390,10 +401,10 @@ def _fillByte(byte, downwards=False):
     for i in range(8):
         res[i/2][i%2] = not int(bytestr[7-i])
 
-    logger.dbg("a-byte-len=%d, data=%r", len(res), res)
+    #logger.dbg("a-byte-len=%d, data=%r", len(res), res)
     if downwards:
         res = res[::-1]
-        logger.dbg("revers:len=%d, data=%r", len(res), res)
+        #logger.dbg("revers:len=%d, data=%r", len(res), res)
 
     #print "\n"
     return res
@@ -401,38 +412,59 @@ def _fillByte(byte, downwards=False):
 def _fillData(bitstream):
     '''
     将 数据填充到模板中
+        V1-L: 一共有26个数据
 
     Fill the encoded data into the template QR code matrix
     '''
     res = copy.deepcopy(_ver1)
 
+    #
+    # 1. 填充 第一部分数据, 一共15个数据, 0~14
+    #    每一个数据是8个bit, 每一个bit占用 一个块;
+    #
     for i in range(15):
         res = _matCp(_fillByte(bitstream[i], (i/3)%2!=0),
             res,
-            21-4*((i%3-1)*(-1)**((i/3)%2)+2),
-            21-2*(i/3+1))
+            21-4*((i%3-1)*(-1)**((i/3)%2)+2), #先向上, 后向下
+            21-2*(i/3+1)) #向左 移动2个单位:块
 
-    #sys.exit()
-
+    # 2. 填充 第二部分数据, 1个, 被 水平定位图像 分割 为 两部分;
     tmp = _fillByte(bitstream[15])
     res = _matCp(tmp[2:], res, 7, 11)
     res = _matCp(tmp[:2], res, 4, 11)
+
+    #logger.dbg("15, len=%d, data=%r", len(tmp), tmp)
+
+    # 3. 填充 第三部分数据, 1个;
     tmp = _fillByte(bitstream[16])
     res = _matCp(tmp, res, 0, 11)
+
+    # 4. 填充 第四部分数据, 1个;
     tmp = _fillByte(bitstream[17], True)
     res = _matCp(tmp, res, 0, 9)
+
+    # 5. 填充 第五部分数据, 1个, 被 水平定位图像 分割 为 两部分;
     tmp = _fillByte(bitstream[18], True)
     res = _matCp(tmp[:2], res, 4, 9)
     res = _matCp(tmp[2:], res, 7, 9)
+
+    # 6. 填充 第六部分数据, 3个;
     for i in range(3):
         res = _matCp(_fillByte(bitstream[19+i], True),
             res, 9+4*i, 9)
+
+    # 7. 填充 第七部分数据, 1个;
     tmp = _fillByte(bitstream[22])
     res = _matCp(tmp, res, 9, 7)
+
+    # 8. 填充 第八部分数据, 最后 3个;
     for i in range(3):
         res = _matCp(_fillByte(bitstream[23+i], i%2==0),
             res, 9, 4-2*i)
 
+    '''
+    #sys.exit()
+    '''
     return res
 
 print "------------ end ------------"
