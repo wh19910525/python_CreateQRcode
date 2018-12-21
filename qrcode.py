@@ -467,16 +467,81 @@ def _fillData(bitstream):
     '''
     return res
 
+def _matAnd(mat1, mat2):
+    '''
+    Matrix-wise and.
+    Dark and dark -> dark
+    Light and light -> light
+    Dark and light -> light
+    Light and dark -> light
+    '''
+    res = [[_LIGHT for i in range(len(mat1[0]))] for j in range(len(mat1))]
+    for j in range(len(mat1)):
+        for i in range(len(mat1[0])):
+            res[j][i] = int(mat1[j][i] == _LIGHT or mat2[j][i] == _LIGHT)
+    return res
+
+# Data area mask to avoid applying masks to functional area.
+_dataAreaMask = [[_DARK for i in range(21)] for j in range(21)]
+_dataAreaMask = _matCp([[_LIGHT for i in range(9)] for j in range(9)],
+    _dataAreaMask, 0, 0)
+_dataAreaMask = _matCp([[_LIGHT for i in range(9)] for j in range(8)],
+    _dataAreaMask, 13, 0)
+_dataAreaMask = _matCp([[_LIGHT for i in range(8)] for j in range(9)],
+    _dataAreaMask, 0, 13)
+_dataAreaMask = _matCp([[_LIGHT for i in range(4)]], _dataAreaMask, 6, 9)
+_dataAreaMask = _matCp([[_LIGHT] for i in range(4)], _dataAreaMask, 9, 6)
+logger.dbg("dataArea-Mask-len=%r, data=%r", len(_dataAreaMask), _dataAreaMask)
+
+# Data masks defined in QR standard.
+_dataMasks = []
+
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if (i+j)%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
+
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if j%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
+
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if i%3==0 else _LIGHT for i in range(21)] for j in range(21)]))
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if (i+j)%3==0 else _LIGHT for i in range(21)] for j in range(21)]))
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if (j/2 + i/3)%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if (i*j)%2+(i*j)%3==0 else _LIGHT for i in range(21)] for j in range(21)]))
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if ((i*j)%2+(i*j)%3)%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
+
+_dataMasks.append(_matAnd(_dataAreaMask,
+    [[_DARK if ((i+j)%2+(i*j)%3)%2==0 else _LIGHT for i in range(21)] for j in range(21)]))
+
+dataMask_000 = _matAnd(_dataAreaMask,
+    [[_DARK if (i+j)%2==0 else _LIGHT for i in range(21)] for j in range(21)])
+
+logger.dbg("data-Mask-len=%r, data=%r", len(dataMask_000), dataMask_000)
+
 print "------------ end ------------"
 
 ################### main #####################
-#test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
-#_genImage(test, 240, 'test.png')
+'''
+test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
+_genImage(test, 240, 'test.png')
+
+#data = '00000000000000000'
 
 data = 'test'
 filledMat = _fillData(_encode(data))
 _genImage(filledMat, 210, "test01.png")
 
+mask = [[ _DARK if (i+j)%2 == 0 else _LIGHT for i in range(21) ] for j in range(21)]
+_genImage(mask, 210, "test01.png")
+
+_genImage(_dataAreaMask, 210, "test01.png")
+
+'''
+
+_genImage(dataMask_000, 210, "test01.png")
 
 
 
