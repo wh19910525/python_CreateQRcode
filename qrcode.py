@@ -16,10 +16,22 @@ logger.ENABLE_DEBUG = True
 print "------------ start ------------"
 
 '''
-0:对应黑色, 1:对应白色
+1:对应黑色, 0:对应白色
 '''
-_DARK = 0
-_LIGHT = 1
+DARK_IS_1 = True
+
+if vars().has_key('DARK_IS_1') and DARK_IS_1:
+    pass
+else:
+    DARK_IS_1 = False
+
+if DARK_IS_1:
+    _DARK = 1
+    _LIGHT = 0
+else:
+    _DARK = 0
+    _LIGHT = 1
+logger.dbg("dark:%r", _DARK)
 
 def _transpose(mat):
     '''
@@ -107,7 +119,7 @@ _align = _matCp(
         1)
 
 '''
-初始化一个 21x21的 白色矩阵
+创建 一个 21x21的 (功能图形)矩阵
 '''
 # Version 1 QR code template with fixed patterns.
 _ver1 = [[_LIGHT for i in range(21)] for j in range(21)]
@@ -131,6 +143,7 @@ _ver1 = _matCp([[_DARK]], _ver1, len(_ver1)-len(_finder)-1, len(_finder)+1)
 
 '''
 创建 代表数据区域的"蒙版"
+
     避免 掩码图案 把 功能性区域 给 过滤掉;
 
 # Data area mask to avoid applying masks to functional area.
@@ -151,9 +164,11 @@ _dataAreaMask = _matCp([[_LIGHT for i in range(4)]], _dataAreaMask, 6, 9)
 _dataAreaMask = _matCp([[_LIGHT] for i in range(4)], _dataAreaMask, 9, 6)
 #logger.dbg("dataArea-Mask-len=%r, data=%r", len(_dataAreaMask), _dataAreaMask)
 
-def _matAnd(mat1, mat2):
+def _matAnd(maskMat, qrMaskMat):
     '''
-    使用 '蒙板 mat1' 和 '掩码 mat2' 进行 或运算, 
+    创建 二维码掩码,
+
+        使用 '蒙板 maskMat' 和 '掩码 qrMaskMat' 进行 [与]运算,
         因为 白色部分是 1;
 
     Matrix-wise and.
@@ -162,20 +177,26 @@ def _matAnd(mat1, mat2):
     Dark and light -> light
     Light and dark -> light
     '''
-    #logger.dbg("data-mat1, len=%r, data=%r", len(mat1), mat1)
-    #logger.dbg("data-mat1-0, len=%r, data=%r", len(mat1[0]), mat1[0])
+    #logger.dbg("data-maskMat, len=%r, data=%r", len(maskMat), maskMat)
+    #logger.dbg("data-maskMat-0, len=%r, data=%r", len(maskMat[0]), maskMat[0])
 
-    res = [[_LIGHT for i in range(len(mat1[0]))] for j in range(len(mat1))]
+    res = [[_LIGHT for i in range(len(maskMat[0]))] for j in range(len(maskMat))]
 
-    for j in range(len(mat1)):
-        for i in range(len(mat1[0])):
-            res[j][i] = int(mat1[j][i] == _LIGHT or mat2[j][i] == _LIGHT)
+    for j in range(len(maskMat)):
+        for i in range(len(maskMat[0])):
+            if DARK_IS_1:
+                res[j][i] = int(maskMat[j][i] and qrMaskMat[j][i])
+            else:
+                res[j][i] = int(maskMat[j][i] or  qrMaskMat[j][i])
 
     #logger.dbg("data, len=%r, data=%r", len(res), res)
     return res
 
 '''
-定义 掩码, 和 蒙板 进行 '与' 动作,
+定义 掩码 矩阵, 8种:
+
+    掩码 和 蒙板 进行 '与' 动作,
+
     避免 掩码图案 把 功能性区域 给 过滤掉;
 
 # Data masks defined in QR standard.
@@ -305,37 +326,58 @@ def _rsEncode(bitstring, nsym):
     qrcodesize    :图像宽度, 单位:像素
     filename      :保存文件名
 '''
-def _genImage(bitmap, qrcodesize, filename):
+def _genImage(bitmapMat, qrcodesize, filename):
+    '''
+    创建 二维码
+
+    以矩阵的左上角为原点, 原点坐标定义为(0, 0), x 轴向右，坐标 x 对应列,
+        y 轴向下, 坐标 y 对应行;
+        于是对于图像中的像素(x, y), 有矩阵元素 mat [ y ] [ x ] 与之对应。
+    --------> X
+    |
+    |
+    |
+    v
+    Y
+
+    Generate image corresponding to the input bitmapMat
+    with specified qrcodesize and filename.
+    '''
     logger.dbg()
 
     width = qrcodesize
     height = qrcodesize
-    '''
-    Generate image corresponding to the input bitmap
-    with specified qrcodesize and filename.
-    '''
+
     # New image in black-white mode initialized with white.
     img = Image.new('1', (width, height), 'white')
     drw = ImageDraw.Draw(img)
 
     # Normalized pixel width.
-    #logger.dbg("block:%rx%r", len(bitmap), len(bitmap))
+    logger.dbg("block:%rx%r", len(bitmapMat), len(bitmapMat))
 
     #用图像宽度 除以 矩阵维度得到 QR码中一个单位对应的像素数
-    a_unit_size = qrcodesize / len(bitmap)
-    #logger.dbg("a-rectangle-size=%r", a_unit_size)
+    a_unit_size = qrcodesize / len(bitmapMat)
+    logger.dbg("a-rectangle-size=%r", a_unit_size)
 
-    for y in range(width):
-        # Normalized y coordinate in bitmap
-        normalj = y / a_unit_size
+    for y in range(height):
+        # Normalized y coordinate in bitmapMat
+        normaly = y / a_unit_size
 
-        for x in range(height):
-            # Normalized x coordinate in bitmap
-            normali = x / a_unit_size
+        for x in range(width):
+            # Normalized x coordinate in bitmapMat
+            normalx = x / a_unit_size
 
-            if normalj < len(bitmap) and normali < len(bitmap):
+            if normaly < len(bitmapMat) and normalx < len(bitmapMat):
+                #
+                # 在 ImageDraw里, 0(False)是黑色，1(True)是白色；
+                #
+                if DARK_IS_1:
+                    drow_color = not bitmapMat[normaly][normalx]
+                else:
+                    drow_color = bitmapMat[normaly][normalx]
+
                 # Draw pixel.
-                drw.point((x, y), fill=bitmap[normalj][normali])
+                drw.point((x, y), fill=drow_color)
 
     img.save(filename)
 
@@ -437,7 +479,7 @@ def _penalty(mat):
 
 def _mask(mat):
     '''
-    应用掩码, 返回 结果矩阵 和 掩码ID;
+    为 矩阵数据 应用掩码, 返回 结果矩阵 和 掩码ID;
 
     Mask the data QR code matrix with all 8 masks,
     call _penalty to calculate penalty scores for each
@@ -463,7 +505,6 @@ def _mask(mat):
 def _fmtEncode(fmt):
     '''
     获得具有EC位的15位 [格式信息],
-        实现容错码计算 和 应用掩码;
 
     Encode the 15-bit format code using BCH code.
     '''
@@ -480,7 +521,7 @@ def _fmtEncode(fmt):
     #
     return ((fmt << 10) ^ code) ^ 0b101010000010010
 
-def _fillInfo(arg):
+def _fillFormatInfo(arg):
     '''
     填充格式信息
 
@@ -492,44 +533,53 @@ def _fillInfo(arg):
     logger.dbg("mask-id=%r", mask)
 
     #
-    # 1. 计算格式信息
+    # 1. 计算 15位 格式信息
     #
 
     # 01 is the format code for L error control level,
     # concatenated with mask id and passed into _fmtEncode
     # to get the 15 bits format code with EC bits.
     fmt = _fmtEncode(int('01'+'{:03b}'.format(mask), 2))
-    logger.dbg("fmt-len=%r", fmt)
+    logger.dbg("fmt=%r", fmt)
 
     #
-    # 2. 把 格式信息取反, 然后转换为 15bit的二进制
+    # 2. 把 格式信息 转换为 15bit的二进制
     #
-    fmtarr = [[not int(c)] for c in '{:015b}'.format(fmt)]
-    logger.dbg("revert-fmt-len=%r, data=%r", len(fmtarr), fmtarr)
+    if DARK_IS_1:
+        fmtarr = [[int(c)] for c in '{:015b}'.format(fmt)]
+    else:
+        fmtarr = [[not int(c)] for c in '{:015b}'.format(fmt)]
+    logger.dbg("fmtInfo-len=%r, data=%r", len(fmtarr), fmtarr)
 
-    # 从后 往前:
+    #
+    # 格式信息, 水平方向 从左向右 一共15个数字, 如下:
+    #   14, 13, 12, 11, 10, 9, 空格, 8, 空格..., 7, 6, 5, 4, 3, 2, 1, 0
+    #
+    # 3.1. 填充 水平的 0~7, 共 8个数字:
+    horizontal_0_7 = _transpose(fmtarr[7:]) #截取 bit7 ~ bit14
+    logger.dbg("01, fmt-len=%r, data=%r", len(horizontal_0_7), horizontal_0_7)
+    mat = _matCp(horizontal_0_7, mat, 8, 13)
 
-    # 3.1. 填充 水平的 0~7
-    horizontal_0_7 = fmtarr[7:]
-    #logger.dbg("01, fmt-len=%r, data=%r", len(horizontal_0_7), horizontal_0_7)
-    mat = _matCp(_transpose(horizontal_0_7), mat, 8, 13)
+    # 3.2. 填充 水平的 8, 共 1个数字:
+    mat = _matCp([fmtarr[6]], mat, 8, 7) #获取bit6
 
-    # 3.2. 填充 垂直的 0~5
-    vertical_0_5 = fmtarr[9:][::-1]
-    mat = _matCp(vertical_0_5, mat, 0, 8)
+    # 3.3. 填充 水平的 9~14, 共 6个数字:
+    mat = _matCp(_transpose(fmtarr[:6]), mat, 8, 0) #截取 bit0 ~ bit5
+
+    #
+    # 格式信息, 垂直方向 从下向上 一共15个数字, 如下:
+    #   14, 13, 12, 11, 10, 9, 8, 空格..., 7, 6, 空格, 5, 4, 3, 2, 1, 0
+    #
+    # 3.4. 填充 垂直的 0~5, 共 6个数字:
+    vertical_0_5 = fmtarr[9:][::-1] #截取 bit9 ~ bit14, 然后反向
     #logger.dbg("02, fmt-len=%r, data=%r", len(vertical_0_5), vertical_0_5)
+    mat = _matCp(vertical_0_5, mat, 0, 8)
 
-    # 3.3. 填充 垂直的 6~7
-    mat = _matCp(fmtarr[7:9][::-1], mat, 7, 8)
+    # 3.5. 填充 垂直的 6~7, 共 2个数字:
+    mat = _matCp(fmtarr[7:9][::-1], mat, 7, 8) #截取 bit7 ~ bit9, 然后反向
 
-    # 3.4. 填充 垂直的 8~14
-    mat = _matCp(fmtarr[:7][::-1], mat, 14, 8)
-
-    # 3.5. 填充 水平的 9~14
-    mat = _matCp(_transpose(fmtarr[:6]), mat, 8, 0)
-
-    # 3.6. 填充 水平的 8
-    mat = _matCp([fmtarr[6]], mat, 8, 7)
+    # 3.6. 填充 垂直的 8~14, 共 7个数字:
+    mat = _matCp(fmtarr[:7][::-1], mat, 14, 8) #截取 bit0 ~ bit6, 然后反向
 
     return mat
 
@@ -540,7 +590,7 @@ def _genBitmap(bitstream):
     Take in the encoded data stream and generate the
     final QR code bitmap.
     '''
-    return _fillInfo(_mask(_fillData(bitstream)))
+    return _fillFormatInfo(_mask(_fillData(bitstream)))
 
 class CapacityOverflowException(Exception):
     '''Exception for data larger than 17 characters in V1-L byte mode.'''
@@ -647,19 +697,16 @@ def _encode(data):
 
 def _fillByte(byte, downwards=False):
     '''
-     Upwards         Downwards
-    ---------        ---------   
-    | 0 | 1 |        | 6 | 7 |    
-    ---------        ---------   
-    | 2 | 3 |        | 4 | 5 |    
-    ---------        ---------   
-    | 4 | 5 |        | 2 | 3 |    
-    ---------        ---------   
-    | 6 | 7 |        | 0 | 1 |    
-    ---------        ---------   
+    把一个字节数据 转换为 一个矩形,
+        也就是 实现单个字节的填充, 
 
-    wanghai
-    ---------        ---------   
+        Upwards模式: 把 字节(byte) 里的 bit 7 和 bit 6,
+            放在 矩形的 (y0, x0) 和 (y0, x1), 以此类推;
+
+    --------------------------------
+
+     Upwards         Downwards
+    -----------------------------> X
     | 7 | 6 |        | 1 | 0 |    
     ---------        ---------   
     | 5 | 4 |        | 3 | 2 |    
@@ -668,6 +715,10 @@ def _fillByte(byte, downwards=False):
     ---------        ---------   
     | 1 | 0 |        | 7 | 6 |    
     ---------        ---------   
+    |
+    |
+    v
+    Y
 
     Fill a byte into a 2 by 4 matrix upwards,
     unless specified downwards.
@@ -675,8 +726,12 @@ def _fillByte(byte, downwards=False):
     bytestr = '{:08b}'.format(byte)
     res = [[0, 0], [0, 0], [0, 0], [0, 0]]
 
-    for i in range(8):
-        res[i/2][i%2] = not int(bytestr[7-i])
+    for y in range(8):
+        i = x = y
+        if DARK_IS_1:
+            res[y/2][x%2] = int(bytestr[7-i])
+        else:
+            res[y/2][x%2] = not int(bytestr[7-i])
 
     #logger.dbg("a-byte-len=%d, data=%r", len(res), res)
     if downwards:
@@ -688,15 +743,20 @@ def _fillByte(byte, downwards=False):
 
 def _fillData(bitstream):
     '''
-    将 数据填充到模板中
-        V1-L: 一共有26个数据
+    将 数据填充到 一个临时的 矩阵模板中, 一个字节 占 8个点位,
+
+        V1-L: 一共有26个字节(encode 19 + rscode 7)
 
     Fill the encoded data into the template QR code matrix
     '''
+
+    #
+    # 1. 先获取一份 已经填充了功能图形的 的 矩形(数据结构)
+    #
     res = copy.deepcopy(_ver1)
 
     #
-    # 1. 填充 第一部分数据, 一共15个数据, 0~14
+    # 2.1. 填充 第一部分数据, 一共15个数据, 0~14
     #    每一个数据是8个bit, 每一个bit占用 一个块;
     #
     for i in range(15):
@@ -705,48 +765,45 @@ def _fillData(bitstream):
             21-4*((i%3-1)*(-1)**((i/3)%2)+2), #先向上, 后向下
             21-2*(i/3+1)) #向左 移动2个单位:块
 
-    # 2. 填充 第二部分数据, 1个, 被 水平定位图像 分割 为 两部分;
+    # 2.2. 填充 第二部分数据, 1个, 被 水平定位图像 分割 为 两部分;
     tmp = _fillByte(bitstream[15])
     res = _matCp(tmp[2:], res, 7, 11)
     res = _matCp(tmp[:2], res, 4, 11)
 
     #logger.dbg("15, len=%d, data=%r", len(tmp), tmp)
 
-    # 3. 填充 第三部分数据, 1个;
+    # 2.3. 填充 第三部分数据, 1个;
     tmp = _fillByte(bitstream[16])
     res = _matCp(tmp, res, 0, 11)
 
-    # 4. 填充 第四部分数据, 1个;
+    # 2.4. 填充 第四部分数据, 1个;
     tmp = _fillByte(bitstream[17], True)
     res = _matCp(tmp, res, 0, 9)
 
-    # 5. 填充 第五部分数据, 1个, 被 水平定位图像 分割 为 两部分;
+    # 2.5. 填充 第五部分数据, 1个, 被 水平定位图像 分割 为 两部分;
     tmp = _fillByte(bitstream[18], True)
     res = _matCp(tmp[:2], res, 4, 9)
     res = _matCp(tmp[2:], res, 7, 9)
 
-    # 6. 填充 第六部分数据, 3个;
+    # 2.6. 填充 第六部分数据, 3个;
     for i in range(3):
         res = _matCp(_fillByte(bitstream[19+i], True),
             res, 9+4*i, 9)
 
-    # 7. 填充 第七部分数据, 1个;
+    # 2.7. 填充 第七部分数据, 1个;
     tmp = _fillByte(bitstream[22])
     res = _matCp(tmp, res, 9, 7)
 
-    # 8. 填充 第八部分数据, 最后 3个;
+    # 2.8. 填充 第八部分数据, 最后 3个;
     for i in range(3):
         res = _matCp(_fillByte(bitstream[23+i], i%2==0),
             res, 9, 4-2*i)
 
-    '''
-    #sys.exit()
-    '''
     return res
 
-def _matXor(mat1, mat2):
+def _matXor(dataMat, dataMaskMat):
     '''
-    数据 添加 掩码
+    数据 和 掩码 按位 进行 [异或]
 
     Matrix-wise xor.
     Dark xor dark -> light
@@ -754,12 +811,22 @@ def _matXor(mat1, mat2):
     Dark xor light -> dark
     Light xor dark -> dark
     '''
-    res = [[_LIGHT for i in range(len(mat1[0]))] for j in range(len(mat1))]
+    res = [[_LIGHT for i in range(len(dataMat[0]))] for j in range(len(dataMat))]
 
-    for j in range(len(mat1)):
-        for i in range(len(mat1[0])):
-            res[j][i] = int(mat1[j][i] == mat2[j][i])
+    for j in range(len(dataMat)):
+        for i in range(len(dataMat[0])):
+            if DARK_IS_1:
+                res[j][i] = int(dataMat[j][i] ^ dataMaskMat[j][i])
+            else:
+                res[j][i] = int(dataMat[j][i] == dataMaskMat[j][i])
 
+    #logger.dbg("old  mat, len=%r, data=%r", len(dataMat), dataMat)
+    #logger.dbg("mask mat, len=%r, data=%r", len(dataMaskMat), dataMaskMat)
+    #logger.dbg("last mat, len=%r, data=%r", len(res), res)
+
+    '''
+    sys.exit()
+    '''
     return res
 
 def qrcode(data, width=210, filename='QR-code.png'):
@@ -768,7 +835,6 @@ def qrcode(data, width=210, filename='QR-code.png'):
 
     Module public interface
     '''
-
     try:
         _genImage(_genBitmap(_encode(data)), width, filename)
     except Exception, e:
@@ -778,8 +844,8 @@ def qrcode(data, width=210, filename='QR-code.png'):
 print "------------ end ------------"
 
 ################### main #####################
-'''
 #001-test
+'''
 test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 _genImage(test, 240, 'test.png')
 
@@ -813,7 +879,10 @@ filledMat = _fillData(_encode(dullData))
 maskedMat, maskID = _mask(filledMat)
 _genImage(maskedMat, 210, "test02.png")
 logger.dbg("mask-id=%r", maskID)
-'''
 
-qrcode('11115111101111567')
+#008-test
+_genImage(_ver1, 210, 'test_ver1_func.png')
+
+'''
+qrcode('Hello world!')
 
