@@ -2,7 +2,7 @@
 #coding:utf-8
 
 from PIL import Image, ImageDraw
-#from numpy import *;
+
 import copy
 import sys
 
