@@ -1,7 +1,7 @@
 
 all:
 	@rm *.pyc *.png -rf
-	@python qrcode.py
+	@python createQRcode.py
 	@touch tmp.png
 	@sz *.png
 

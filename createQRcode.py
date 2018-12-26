@@ -343,7 +343,7 @@ def _genImage(bitmapMat, qrcodesize, filename):
     Generate image corresponding to the input bitmapMat
     with specified qrcodesize and filename.
     '''
-    logger.dbg()
+    #logger.dbg("last-data-len=%r, data=%r", len(bitmapMat), bitmapMat)
 
     width = qrcodesize
     height = qrcodesize
@@ -353,7 +353,7 @@ def _genImage(bitmapMat, qrcodesize, filename):
     drw = ImageDraw.Draw(img)
 
     # Normalized pixel width.
-    logger.dbg("block:%rx%r", len(bitmapMat), len(bitmapMat))
+    logger.dbg("block:%rx%r", len(bitmapMat[0]), len(bitmapMat))
 
     #用图像宽度 除以 矩阵维度得到 QR码中一个单位对应的像素数
     a_unit_size = qrcodesize / len(bitmapMat)
@@ -502,24 +502,34 @@ def _mask(mat):
 
     return maskeds[index], index
 
-def _fmtEncode(fmt):
+def _createFmtEncode(fmt):
     '''
-    获得具有EC位的15位 [格式信息],
+    创建完整的格式信息
+
+    1. 首先 获得具有EC位的15位 [格式信息],
 
     Encode the 15-bit format code using BCH code.
     '''
-    logger.dbg("format-info=%r", fmt)
+    logger.dbg("version+mask=%r", '{:05b}'.format(fmt))
 
     g = 0x537
     code = fmt << 10
     for i in range(4, -1, -1):
         if code & (1 << (i+10)):
             code ^= g << i
-    #
-    # 计算得出十位BCH容错码接在格式信息之后,
-    #   还要与掩码101010000010010进行异或, 作用同QR掩码;
-    #
-    return ((fmt << 10) ^ code) ^ 0b101010000010010
+    '''
+    2. 把 得到 十位BCH容错码 接在格式信息之后, 一共15个数字,
+        还要与掩码101010000010010进行异或, 作用同QR掩码;
+    '''
+    formatInfo = (fmt << 10) ^ code
+    formatInfoMask = 0b101010000010010
+    finalFormatInfo = formatInfo ^ formatInfoMask
+
+    logger.dbg("format-info      =%r", '{:015b}'.format(formatInfo))
+    logger.dbg("format-info-mask =%r", '{:015b}'.format(formatInfoMask))
+    logger.dbg("final-format-info=%r\n", '{:015b}'.format(finalFormatInfo))
+
+    return finalFormatInfo
 
 def _fillFormatInfo(arg):
     '''
@@ -537,13 +547,15 @@ def _fillFormatInfo(arg):
     #
 
     # 01 is the format code for L error control level,
-    # concatenated with mask id and passed into _fmtEncode
+    # concatenated with mask id and passed into _createFmtEncode
     # to get the 15 bits format code with EC bits.
-    fmt = _fmtEncode(int('01'+'{:03b}'.format(mask), 2))
-    logger.dbg("fmt=%r", fmt)
+    fmt = _createFmtEncode(int('01'+'{:03b}'.format(mask), 2))
+    #logger.dbg("fmt=%r", fmt)
 
     #
     # 2. 把 格式信息 转换为 15bit的二进制
+    #
+    # bit 0 ~ bit 4, 一共5位: bit0, bit1 为 [容错等级], bit2, bit3, bit4 为 [掩码类型];
     #
     if DARK_IS_1:
         fmtarr = [[int(c)] for c in '{:015b}'.format(fmt)]
@@ -552,12 +564,17 @@ def _fillFormatInfo(arg):
     logger.dbg("fmtInfo-len=%r, data=%r", len(fmtarr), fmtarr)
 
     #
-    # 格式信息, 水平方向 从左向右 一共15个数字, 如下:
-    #   14, 13, 12, 11, 10, 9, 空格, 8, 空格..., 7, 6, 5, 4, 3, 2, 1, 0
+    # 二维码 格式信息, 水平方向 从左向右 一共15个数字, 如下:
+    #
+    # ---------------------------------------------------------------------------------------------------------------------------------
+    # |  14  |  13  |  12  |  11  |  10  |  9   | 空格 |   8  | 空格n个 |   7  |   6  |   5   |   4   |   3   |   2   |   1   |   0   |
+    # ---------------------------------------------------------------------------------------------------------------------------------
+    # | bit0 | bit1 | bit2 | bit3 | bit4 | bit5 |      | bit6 |         | bit7 | bit8 |  bit9 | bit10 | bit11 | bit12 | bit13 | bit14 |
+    # ---------------------------------------------------------------------------------------------------------------------------------
     #
     # 3.1. 填充 水平的 0~7, 共 8个数字:
     horizontal_0_7 = _transpose(fmtarr[7:]) #截取 bit7 ~ bit14
-    logger.dbg("01, fmt-len=%r, data=%r", len(horizontal_0_7), horizontal_0_7)
+    #logger.dbg("01, fmt-len=%r, data=%r", len(horizontal_0_7), horizontal_0_7)
     mat = _matCp(horizontal_0_7, mat, 8, 13)
 
     # 3.2. 填充 水平的 8, 共 1个数字:
@@ -678,7 +695,9 @@ def _encode(data):
     #
     # Add padding pattern.
     #
-    while len(res) < 19: #zgj, 这个19是如何计算的;
+    # V1-L 的 数据码字数: 19个
+    #
+    while len(res) < 19:
         res.append(int('11101100', 2))
         res.append(int('00010001', 2))
 
@@ -693,32 +712,45 @@ def _encode(data):
     #
     # 8. 添加 RS容错码;
     #
-    return _rsEncode(res, 7) #zgj, 为什么是7个;
+    # V1-L 的 容错码字数: 7个
+    #
+    return _rsEncode(res, 7)
 
 def _fillByte(byte, downwards=False):
     '''
-    把一个字节数据 转换为 一个矩形,
-        也就是 实现单个字节的填充, 
+    把 1个字节数据 转换为 一个2x4的矩形,
+        也就是 实现单个字节的填充, 如下:
 
-        Upwards模式: 把 字节(byte) 里的 bit 7 和 bit 6,
-            放在 矩形的 (y0, x0) 和 (y0, x1), 以此类推;
+        例如: 一个 8bit的二进制字 '0b 0010 1101' 左边是高位, 右边是低位,
+
+        在内存里, 正好相反, 左边是低位, 右边是高位, 如下:
+        ---------------------------------------------------------
+        | bit0 | bit1 | bit2 | bit3 | bit4 | bit5 | bit6 | bit7 |
+        ---------------------------------------------------------
+        |   0  |   0  |   1  |   0  |   1  |   1  |  0   |   1  |
+        ---------------------------------------------------------
+
+        Upwards模式:
+            把 字节(byte) 里的 bit 7 和 bit 6, 放在 矩形的 (y0, x0) 和 (y0, x1),
+            以此类推, 把 bit1 和 bit0, 放在 矩形的 (y3, x0) 和 (y3, x1);
 
     --------------------------------
 
-     Upwards         Downwards
-    -----------------------------> X
-    | 7 | 6 |        | 1 | 0 |    
-    ---------        ---------   
-    | 5 | 4 |        | 3 | 2 |    
-    ---------        ---------   
-    | 3 | 2 |        | 5 | 4 |    
-    ---------        ---------   
-    | 1 | 0 |        | 7 | 6 |    
-    ---------        ---------   
-    |
-    |
-    v
-    Y
+          y  x    Upwards          Downwards
+         (0, 0) ---------------          ---------------    ----> X轴
+                | bit7 | bit6 |  ^       | bit1 | bit0 |    
+         (1, 0) ---------------  |       ---------------  | 
+                | bit5 | bit4 |  |       | bit3 | bit2 |  |  
+         (2, 0) ---------------  |       ---------------  | 
+                | bit3 | bit2 |  |       | bit5 | bit4 |  |  
+         (3, 0) ---------------  |       ---------------  | 
+                | bit1 | bit0 |  |       | bit7 | bit6 |  v  
+         (4, 0) ---------------          ---------------    
+
+                |
+                |
+                v
+               Y轴
 
     Fill a byte into a 2 by 4 matrix upwards,
     unless specified downwards.
@@ -840,6 +872,7 @@ def qrcode(data, width=210, filename='QR-code.png'):
     except Exception, e:
         print e
         raise e
+    logger.dbg("Create [%r] QR-code ok.", data)
 
 print "------------ end ------------"
 
@@ -884,5 +917,5 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-qrcode('Hello world!')
+qrcode('Hi nexgo!')
 
