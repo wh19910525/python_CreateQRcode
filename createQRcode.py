@@ -18,7 +18,7 @@ logger.ENABLE_DEBUG = True
 # mixed -- 3
 # chinese -- 4 
 # byte -- 9
-curEncodeMode = 9
+curEncodeMode = 2
 
 print "------------ start ------------"
 
@@ -668,6 +668,70 @@ def _encode_byte_mode(data):
 
     return bitstring
 
+def _calAlphanumericMode_value(alphanumericMode_value):
+    if ord(alphanumericMode_value) >= ord('0') and ord(alphanumericMode_value) <= ord('9'): # 数字
+        value = ord(alphanumericMode_value) - 48
+    elif ord(alphanumericMode_value) >= ord('A') and ord(alphanumericMode_value) <= ord('Z'): #大写字母
+        value = ord(alphanumericMode_value) - 65 + 10
+
+    logger.dbg("convert alphanumeric mode bit to value=%r", value)
+
+    return value
+
+def _encode_alphanumeric_mode(data):
+    #
+    # 1. 添加 模式指示符;
+    # Byte mode: 0010.
+    #
+    bitstring = '0010'
+    logger.dbg("Mode=\n\t%r\n", bitstring)
+
+    #
+    # 2. 添加 字符数指示符;
+    # Character count: 9 bits.
+    #
+    bitstring += '{:09b}'.format(len(data))
+    logger.dbg("Mode + char CNT=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    #
+    # 3. 对于每一个输入的字符, 它的值为 0到44;
+    #
+    while data:
+        tmpstr = data[:2]
+
+        if len(tmpstr) == 2:
+            has2char_bit0 = tmpstr[0]
+            has2char_bit1 = tmpstr[1]
+
+            bit0_value = _calAlphanumericMode_value(has2char_bit0)
+            bit1_value = _calAlphanumericMode_value(has2char_bit1)
+
+            has2char_value = bit0_value*45 + bit1_value
+
+            logger.dbg("has2char-value=%r", has2char_value)
+
+            '''
+            sys.exit()
+            '''
+            converting_every_integer_to_binary = '{:011b}'.format(has2char_value)
+        elif len(tmpstr) == 1:
+            has_onlychar_bit0 = tmpstr[0]
+
+            bit0_value = _calAlphanumericMode_value(has_onlychar_bit0)
+
+            logger.dbg("onlychar-value=%r", bit0_value)
+
+            converting_every_integer_to_binary = '{:06b}'.format(bit0_value)
+
+        logger.dbg("every%rchar --> %rbit\n\t%r --> tmp=%r\n", len(tmpstr), len(converting_every_integer_to_binary), converting_every_integer_to_binary, tmpstr)
+
+        bitstring += converting_every_integer_to_binary
+        data = data[2:]
+
+    logger.dbg("byte mode + char cnt + data=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    return bitstring
+
 def _encode_numeric_mode(data):
 
     #
@@ -696,7 +760,6 @@ def _encode_numeric_mode(data):
         elif len(tmpstr) == 1:
             converting_every_integer_to_binary = '{:04b}'.format(int(tmpstr))
         #logger.dbg("every%rint --> %rbit=\n\t%r --> tmp=%r\n", len(tmpstr), len(converting_every_integer_to_binary), converting_every_integer_to_binary, tmpstr)
-        #res.append(int(bitstring[:8], 2))
 
         tmpstr = tmpstr[3:]
         bitstring += converting_every_integer_to_binary
@@ -729,7 +792,7 @@ def _encode(data):
     if curEncodeMode == 1:#数字模式
         bitstring = _encode_numeric_mode(data)
     elif curEncodeMode == 2:# 字母数字模式
-        bitstring = _encode_numeric_mode(data)
+        bitstring = _encode_alphanumeric_mode(data)
     else :# 字节模式
         bitstring = _encode_byte_mode(data)
     #
@@ -924,9 +987,6 @@ def _matXor(dataMat, dataMaskMat):
     #logger.dbg("mask mat, len=%r, data=%r", len(dataMaskMat), dataMaskMat)
     #logger.dbg("last mat, len=%r, data=%r", len(res), res)
 
-    '''
-    sys.exit()
-    '''
     return res
 
 def qrcode(data, width=210, filename='QR-code'):
@@ -939,9 +999,9 @@ def qrcode(data, width=210, filename='QR-code'):
         if curEncodeMode == 1:#数字模式
             logger.dbg("use numeric mode")
             filename += "-numeric.png"
-            _genImage(_genBitmap(_encode(data)), width, filename)
         elif curEncodeMode == 2:# 字母数字模式
             logger.dbg("use alphanumeric mode")
+            filename += "-alphanumeric.png"
         elif curEncodeMode == 3:# 混合模式
             logger.dbg("use mixed mode")
         elif curEncodeMode == 4:# 汉字模式
@@ -949,7 +1009,8 @@ def qrcode(data, width=210, filename='QR-code'):
         else :# 字节模式
             logger.dbg("use byte mode")
             filename += "-byte.png"
-            _genImage(_genBitmap(_encode(data)), width, filename)
+
+        _genImage(_genBitmap(_encode(data)), width, filename)
     except Exception, e:
         print e
         raise e
@@ -998,5 +1059,5 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-qrcode('1')
+qrcode('19AZ')
 
