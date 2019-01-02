@@ -13,6 +13,13 @@ logger.ENABLE_DEBUG = True
 #logger.PRINT_BUILDTIME = True
 #logger.PRINT_FILENAME = True
 
+# numeric -- 1
+# alphanumeric -- 2
+# mixed -- 3
+# chinese -- 4 
+# byte -- 9
+curEncodeMode = 9
+
 print "------------ start ------------"
 
 '''
@@ -617,106 +624,89 @@ class CapacityOverflowException(Exception):
     def __str__(self):
         return repr(self.arg)
 
-def _encode_numeric_mode(data):
-    '''
-    编码 输入数据,
-        返回 一维 整数矩阵 [ 模式指示符 + 字数指示符 + 数据内容 + 终止符 + 容错码 ]
+def convert_every8bit_str(binary_str):
+    every8bit_str = ''
 
-    Encode the input data stream.
-    Add mode prefix, encode data using ISO-8859-1,
-    group data, add padding suffix, and call RS encoding method.
-    '''
-    logger.dbg("input-data, len=%r, [%r]", len(data), data)
+    while binary_str:
+        tmp_str = binary_str[:8]
+        if len(tmp_str) > 4:
+            tmp_str = tmp_str[:4] + '-' + tmp_str[4:]
+        every8bit_str += tmp_str
 
-    #
-    # 检测输入的数据是否超过V1-L byte mode 的最大编码长度17,
-    #       如果超过就抛出异常
-    #
-    if len(data) > 17:
-        raise CapacityOverflowException(
-                'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
-    #
-    # 1. 添加 模式指示符;
-    # Byte mode prefix 0100.
-    #
-    bitstring = '0100'
-    logger.dbg("byte mode=\n\t%r\n", bitstring)
+        if len(binary_str) >= 8:
+            every8bit_str += ', '
 
-    #
-    # 2. 添加 字符数指示符;
-    # Character count in 8 binary bits.
-    #
-    bitstring += '{:08b}'.format(len(data))
-    logger.dbg("byte mode + char cnt=\n\t%r\n", bitstring)
+        binary_str = binary_str[8:]
 
-    #
-    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
-    #       ISO-8859-1编码是单字节编码，向下兼容ASCII;
-    #
-    # Encode every character in ISO-8859-1 in 8 binary bits.
-    #
-    for c in data:
-        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
-    logger.dbg("byte mode + char cnt + data=\n\t%r\n", bitstring)
+    #logger.dbg("8 bit to arry=\n\t%r\n", every8bit_str)
 
-    #
-    # 4. 添加终止符,
-    #       如果尾部数据不足8bit，则在尾部 填充0
-    #
-    # Terminator 0000.
-    #
-    tmpstr = bitstring
-    convert_str_to_8_bit_array = ''
-    last_str = ''
-    while tmpstr:
-        convert_str_to_8_bit_array += tmpstr[:8]
-        last_str = tmpstr[:8]
-        convert_str_to_8_bit_array += ', '
-        tmpstr = tmpstr[8:]
-    #logger.dbg("8 bit to arry=\n\t%r\n", convert_str_to_8_bit_array)
-    logger.dbg("last-str, len=%r, data=%r, append-0=%r", len(last_str), last_str, last_str+'0'*(8-len(last_str)))
-
-    bitstring += '0'*(8-len(last_str))
-    logger.dbg("byte mode + char cnt + data + terminater=\n\t%r\n", bitstring)
-
-    res = list()
-    #
-    # 5. 把 每8位 二进制数据 转换为 整数;
-    # Convert string to byte numbers.
-    #
-    while bitstring:
-        res.append(int(bitstring[:8], 2))
-        bitstring = bitstring[8:]
-    logger.dbg("convert byte to int=\n\t%r\n", res)
-
-    #
-    # 6. 如果编码后的数据不足版本及纠错级别的最大容量,
-    #       则在尾部补充 "11101100" 和 "00010001"
-    #
-    # Add padding pattern.
-    #
-    # V1-L 的 数据码字数: 19个
-    #
-    while len(res) < 19:
-        res.append(int('11101100', 2))
-        res.append(int('00010001', 2))
-
-    #
-    # 7. 截取 前19个字符
-    # Slice to 19 bytes for V1-L.
-    #
-    res = res[:19]
-
-    logger.dbg("value:1~19, data=\n\t%r\n", res)
-
-    #
-    # 8. 添加 RS容错码;
-    #
-    # V1-L 的 容错码字数: 7个
-    #
-    return _rsEncode(res, 7)
+    return every8bit_str
 
 def _encode_byte_mode(data):
+    #
+    # 1. 添加 模式指示符;
+    # Byte mode: 0100.
+    #
+    bitstring = '0100'
+    logger.dbg("Mode=\n\t%r\n", bitstring)
+
+    #
+    # 2. 添加 字符数指示符;
+    # Character count: 8 bits.
+    #
+    bitstring += '{:08b}'.format(len(data))
+    logger.dbg("Mode + char CNT=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    #
+    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
+    #       ISO-8859-1编码是单字节编码，向下兼容ASCII;
+    #
+    for c in data:
+        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
+
+    logger.dbg("byte mode + char cnt + data=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    return bitstring
+
+def _encode_numeric_mode(data):
+
+    #
+    # 1. 添加 模式指示符:
+    # 数字 mode: 0001
+    #
+    bitstring = '0001'
+    logger.dbg("Mode=\n\t%r\n", bitstring)
+
+    #
+    # 2. 添加 字符数指示符;
+    # Character count: 10 bits.
+    #
+    bitstring += '{:010b}'.format(len(data))
+    logger.dbg("Mode + char CNT=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    #
+    # 3. 在数字模式下, 每3个数据 分为一组, 然后 分别被编码成10bit的二进制数;
+    #
+    tmpstr = data
+    while tmpstr:
+        if len(tmpstr) >= 3:
+            converting_every_integer_to_binary = '{:010b}'.format(int(tmpstr[:3]))
+        elif len(tmpstr) == 2:
+            converting_every_integer_to_binary = '{:07b}'.format(int(tmpstr))
+        elif len(tmpstr) == 1:
+            converting_every_integer_to_binary = '{:04b}'.format(int(tmpstr))
+        #logger.dbg("every%rint --> %rbit=\n\t%r --> tmp=%r\n", len(tmpstr), len(converting_every_integer_to_binary), converting_every_integer_to_binary, tmpstr)
+        #res.append(int(bitstring[:8], 2))
+
+        tmpstr = tmpstr[3:]
+        bitstring += converting_every_integer_to_binary
+
+    logger.dbg("mode + char cnt + data=\n\t%r\n", convert_every8bit_str(bitstring))
+
+    return bitstring
+
+
+def _encode(data):
     '''
     编码 输入数据,
         返回 一维 整数矩阵 [ 模式指示符 + 字数指示符 + 数据内容 + 终止符 + 容错码 ]
@@ -727,6 +717,7 @@ def _encode_byte_mode(data):
     '''
     logger.dbg("input-data, len=%r, [%r]", len(data), data)
 
+    bitstring = ''
     #
     # 检测输入的数据是否超过V1-L byte mode 的最大编码长度17,
     #       如果超过就抛出异常
@@ -734,54 +725,35 @@ def _encode_byte_mode(data):
     if len(data) > 17:
         raise CapacityOverflowException(
                 'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
+
+    if curEncodeMode == 1:#数字模式
+        bitstring = _encode_numeric_mode(data)
+    elif curEncodeMode == 2:# 字母数字模式
+        bitstring = _encode_numeric_mode(data)
+    else :# 字节模式
+        bitstring = _encode_byte_mode(data)
     #
-    # 1. 添加 模式指示符;
-    # Byte mode prefix 0100.
+    # 4. 添加终止符 [0000],
     #
-    bitstring = '0100'
-    logger.dbg("byte mode=\n\t%r\n", bitstring)
+    bitstring += '0000'
+    logger.dbg("mode + char cnt + data + terminater=\n\t%r\n", convert_every8bit_str(bitstring))
 
     #
-    # 2. 添加 字符数指示符;
-    # Character count in 8 binary bits.
-    #
-    bitstring += '{:08b}'.format(len(data))
-    logger.dbg("byte mode + char cnt=\n\t%r\n", bitstring)
-
-    #
-    # 3. 把每一个字符 用 ISO/IEC 8859-1 标准编码, 然后 转换为 八位的二进制;
-    #       ISO-8859-1编码是单字节编码，向下兼容ASCII;
-    #
-    # Encode every character in ISO-8859-1 in 8 binary bits.
-    #
-    for c in data:
-        bitstring += '{:08b}'.format(ord(c.encode('iso-8859-1')))
-    logger.dbg("byte mode + char cnt + data=\n\t%r\n", bitstring)
-
-    #
-    # 4. 添加终止符,
-    #       如果尾部数据不足8bit，则在尾部 填充0
-    #
-    # Terminator 0000.
+    # 5. 每8bit分为一组, 如果尾部数据不足8bit，则在尾部 填充0:
     #
     tmpstr = bitstring
-    convert_str_to_8_bit_array = ''
     last_str = ''
     while tmpstr:
-        convert_str_to_8_bit_array += tmpstr[:8]
         last_str = tmpstr[:8]
-        convert_str_to_8_bit_array += ', '
         tmpstr = tmpstr[8:]
-    #logger.dbg("8 bit to arry=\n\t%r\n", convert_str_to_8_bit_array)
-    logger.dbg("last-str, len=%r, data=%r, append-0=%r", len(last_str), last_str, last_str+'0'*(8-len(last_str)))
 
     bitstring += '0'*(8-len(last_str))
-    logger.dbg("byte mode + char cnt + data + terminater=\n\t%r\n", bitstring)
+    #logger.dbg("last-str, len=%r, data=%r, append-0=%r", len(last_str), last_str, last_str+'0'*(8-len(last_str)))
+    logger.dbg("byte mode + char cnt + data + terminater + append str=\n\t%r\n", convert_every8bit_str(bitstring))
 
     res = list()
     #
-    # 5. 把 每8位 二进制数据 转换为 整数;
-    # Convert string to byte numbers.
+    # 6. 把 每8位 二进制数据 转换为 整数;
     #
     while bitstring:
         res.append(int(bitstring[:8], 2))
@@ -789,10 +761,8 @@ def _encode_byte_mode(data):
     logger.dbg("convert byte to int=\n\t%r\n", res)
 
     #
-    # 6. 如果编码后的数据不足版本及纠错级别的最大容量,
+    # 7. 如果编码后的数据不足版本及纠错级别的最大容量,
     #       则在尾部补充 "11101100" 和 "00010001"
-    #
-    # Add padding pattern.
     #
     # V1-L 的 数据码字数: 19个
     #
@@ -801,15 +771,14 @@ def _encode_byte_mode(data):
         res.append(int('00010001', 2))
 
     #
-    # 7. 截取 前19个字符
-    # Slice to 19 bytes for V1-L.
+    # 8. 截取 前19个字符
     #
     res = res[:19]
 
     logger.dbg("value:1~19, data=\n\t%r\n", res)
 
     #
-    # 8. 添加 RS容错码;
+    # 9. 添加 RS容错码;
     #
     # V1-L 的 容错码字数: 7个
     #
@@ -960,14 +929,27 @@ def _matXor(dataMat, dataMaskMat):
     '''
     return res
 
-def qrcode(data, width=210, filename='QR-code.png'):
+def qrcode(data, width=210, filename='QR-code'):
     '''
     创建 二维码
 
     Module public interface
     '''
     try:
-        _genImage(_genBitmap(_encode_byte_mode(data)), width, filename)
+        if curEncodeMode == 1:#数字模式
+            logger.dbg("use numeric mode")
+            filename += "-numeric.png"
+            _genImage(_genBitmap(_encode(data)), width, filename)
+        elif curEncodeMode == 2:# 字母数字模式
+            logger.dbg("use alphanumeric mode")
+        elif curEncodeMode == 3:# 混合模式
+            logger.dbg("use mixed mode")
+        elif curEncodeMode == 4:# 汉字模式
+            logger.dbg("use chinese mode")
+        else :# 字节模式
+            logger.dbg("use byte mode")
+            filename += "-byte.png"
+            _genImage(_genBitmap(_encode(data)), width, filename)
     except Exception, e:
         print e
         raise e
@@ -1016,5 +998,5 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-qrcode('Hi nexgo!')
+qrcode('1')
 
