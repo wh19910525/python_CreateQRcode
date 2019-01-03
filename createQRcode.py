@@ -13,13 +13,18 @@ logger.ENABLE_DEBUG = True
 #logger.PRINT_BUILDTIME = True
 #logger.PRINT_FILENAME = True
 
-numeric_mode = 1
-alphanumeric_mode = 2
-mixed_mode = 3
-chinese_mode = 4 
-byte_mode = 9
+numeric_mode        = 1
+alphanumeric_mode   = 2
+mixed_mode          = 3
+chinese_mode        = 4
+byte_mode           = 9
 #########################
 curEncodeMode = mixed_mode
+
+#
+# value: 0 ~ 7
+#
+force_use_specify_mask_id = None
 
 print "------------ start ------------"
 
@@ -487,7 +492,7 @@ def _penalty(mat):
 
 def _mask(mat):
     '''
-    为 矩阵数据 应用掩码, 返回 结果矩阵 和 掩码ID;
+    把 编码数据 和 掩码数据 进行 异或, 返回 结果矩阵 和 掩码ID;
 
     Mask the data QR code matrix with all 8 masks,
     call _penalty to calculate penalty scores for each
@@ -507,6 +512,10 @@ def _mask(mat):
 
     # Find the id of the best mask.
     index = penalty.index(min(penalty))
+    
+    if force_use_specify_mask_id != None:
+        logger.info("force use the specified mask=%r", force_use_specify_mask_id)
+        index = force_use_specify_mask_id
 
     return maskeds[index], index
 
@@ -770,44 +779,26 @@ def _encode_numeric_mode(data):
 
     return bitstring
 
-
-def _encode(data):
-    '''
-    编码 输入数据,
-        返回 一维 整数矩阵 [ 模式指示符 + 字数指示符 + 数据内容 + 终止符 + 容错码 ]
-
-    Encode the input data stream.
-    Add mode prefix, encode data using ISO-8859-1,
-    group data, add padding suffix, and call RS encoding method.
-    '''
-    logger.dbg("input-data, len=%r, [%r]", len(data), data)
+def _encode_mixed_mode(data):
+    logger.dbg("\n\tdata=%r\n", data)
 
     bitstring = ''
-    #
-    # 检测输入的数据是否超过V1-L byte mode 的最大编码长度17,
-    #       如果超过就抛出异常
-    #
-    if len(data) > 17:
-        raise CapacityOverflowException(
-                'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
-
-    ###########################################
-    #                 start                   #
-    ###########################################
 
     # 保存 已经解码的字符 个数;
     has_encode_cnt = 0
 
     while(True):
-        # 获取需要编码的数据 起始地址
-        need_encode_data = data[has_encode_cnt:]
-        logger.dbg("data-len=%d, data=%r", len(need_encode_data), need_encode_data)
-        
-        # 设置 初始的flag;
+        # 1. 设置 初始的flag;
         curCharMode = None
         start_index = 0
 
-        # 判断 当前字符 是否 属于 数字模式:
+        # 2. 获取需要编码的数据 起始地址
+        need_encode_data = data[has_encode_cnt:]
+        logger.dbg("data-len=%d, data=%r", len(need_encode_data), need_encode_data)
+
+        # 3. 判断 当前字符 属于 的模式:
+
+        # 3.1. 判断 当前字符 是否 属于 数字模式:
         if curCharMode == None:
             while(True):
                 is_numeric_mode_char = need_encode_data[start_index]
@@ -817,7 +808,7 @@ def _encode(data):
                 else:
                     break
 
-        # 判断 当前字符 是否 属于 字母数字模式:
+        # 3.2. 判断 当前字符 是否 属于 字母数字模式:
         if curCharMode == None:
             while(True):
                 is_alphanumeric_mode_char = need_encode_data[start_index]
@@ -829,7 +820,7 @@ def _encode(data):
                 else:
                     break
 
-        # 剩下的 所有字符 使用 字节模式 编码:
+        # 3.3. 剩下的 所有字符 使用 字节模式 编码:
         if curCharMode == None:
             curCharMode = byte_mode
             start_index = len(need_encode_data)
@@ -847,28 +838,49 @@ def _encode(data):
 
         logger.dbg("Mode + char-Cnt + Data=\n\t%r\n", convert_every8bit_str(bitstring))
 
-        # 统计已经 编码的数据
+        # 4. 统计已经 编码的数据
         has_encode_cnt += start_index
 
-        # 判断 所有的数据 是否 已经全部编码 
+        # 5. 判断 所有的数据 是否 已经全部编码
         if has_encode_cnt == len(data):
             break
 
             '''
             sys.exit()
             '''
+    return bitstring
+
+def _encode(data):
+    '''
+    编码 输入数据,
+        返回 一维 整数矩阵 [ 模式指示符 + 字数指示符 + 数据内容 + 终止符 + 容错码 ]
+
+    Encode the input data stream.
+    Add mode prefix, encode data using ISO-8859-1,
+    group data, add padding suffix, and call RS encoding method.
+    '''
+    logger.dbg("input-data, len=%r, [%r]", len(data), data)
+
+    bitstring = ''
+    #
+    # 1. 检测输入的数据是否超过V1-L byte mode 的最大编码长度17,
+    #       如果超过就抛出异常
+    #
+    if len(data) > 17:
+        raise CapacityOverflowException(
+                'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
+
+    #
+    # 2. 使用 不用的模式来编码
+    #
     if curEncodeMode == numeric_mode:#数字模式
-        bitstring = _encode_numeric_mode(data)
+        bitstring += _encode_numeric_mode(data)
     elif curEncodeMode == alphanumeric_mode:# 字母数字模式
-        bitstring = _encode_alphanumeric_mode(data)
+        bitstring += _encode_alphanumeric_mode(data)
     elif curEncodeMode == mixed_mode:# 混合模式
-        pass
+        bitstring += _encode_mixed_mode(data)
     else :# 字节模式
-        bitstring = _encode_byte_mode(data)
-        
-    ###########################################
-    #                 end                     #
-    ###########################################
+        bitstring += _encode_byte_mode(data)
 
     #
     # 4. 添加终止符 [0000],
@@ -1135,5 +1147,6 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-qrcode('1986AZ5gh')
+#force_use_specify_mask_id = 1
+qrcode('1986AZ5gh, nexgo')
 
