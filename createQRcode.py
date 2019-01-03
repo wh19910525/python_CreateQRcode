@@ -13,12 +13,13 @@ logger.ENABLE_DEBUG = True
 #logger.PRINT_BUILDTIME = True
 #logger.PRINT_FILENAME = True
 
-# numeric -- 1
-# alphanumeric -- 2
-# mixed -- 3
-# chinese -- 4 
-# byte -- 9
-curEncodeMode = 2
+numeric_mode = 1
+alphanumeric_mode = 2
+mixed_mode = 3
+chinese_mode = 4 
+byte_mode = 9
+#########################
+curEncodeMode = mixed_mode
 
 print "------------ start ------------"
 
@@ -679,6 +680,8 @@ def _calAlphanumericMode_value(alphanumericMode_value):
     return value
 
 def _encode_alphanumeric_mode(data):
+    logger.dbg("\n\tdata=%r\n", data)
+
     #
     # 1. 添加 模式指示符;
     # Byte mode: 0010.
@@ -710,9 +713,6 @@ def _encode_alphanumeric_mode(data):
 
             logger.dbg("has2char-value=%r", has2char_value)
 
-            '''
-            sys.exit()
-            '''
             converting_every_integer_to_binary = '{:011b}'.format(has2char_value)
         elif len(tmpstr) == 1:
             has_onlychar_bit0 = tmpstr[0]
@@ -723,7 +723,7 @@ def _encode_alphanumeric_mode(data):
 
             converting_every_integer_to_binary = '{:06b}'.format(bit0_value)
 
-        logger.dbg("every%rchar --> %rbit\n\t%r --> tmp=%r\n", len(tmpstr), len(converting_every_integer_to_binary), converting_every_integer_to_binary, tmpstr)
+        logger.dbg("every%rchar --> %rbit\n\t%r --> %r\n", len(tmpstr), len(converting_every_integer_to_binary), tmpstr, converting_every_integer_to_binary)
 
         bitstring += converting_every_integer_to_binary
         data = data[2:]
@@ -733,6 +733,7 @@ def _encode_alphanumeric_mode(data):
     return bitstring
 
 def _encode_numeric_mode(data):
+    logger.dbg("\n\tdata=%r\n", data)
 
     #
     # 1. 添加 模式指示符:
@@ -759,7 +760,8 @@ def _encode_numeric_mode(data):
             converting_every_integer_to_binary = '{:07b}'.format(int(tmpstr))
         elif len(tmpstr) == 1:
             converting_every_integer_to_binary = '{:04b}'.format(int(tmpstr))
-        #logger.dbg("every%rint --> %rbit=\n\t%r --> tmp=%r\n", len(tmpstr), len(converting_every_integer_to_binary), converting_every_integer_to_binary, tmpstr)
+
+        logger.dbg("every%rint --> %rbit=\n\t%r --> %r\n", len(tmpstr[:3]), len(converting_every_integer_to_binary),  tmpstr[:3], converting_every_integer_to_binary)
 
         tmpstr = tmpstr[3:]
         bitstring += converting_every_integer_to_binary
@@ -789,12 +791,85 @@ def _encode(data):
         raise CapacityOverflowException(
                 'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
 
-    if curEncodeMode == 1:#数字模式
+    ###########################################
+    #                 start                   #
+    ###########################################
+
+    # 保存 已经解码的字符 个数;
+    has_encode_cnt = 0
+
+    while(True):
+        # 获取需要编码的数据 起始地址
+        need_encode_data = data[has_encode_cnt:]
+        logger.dbg("data-len=%d, data=%r", len(need_encode_data), need_encode_data)
+        
+        # 设置 初始的flag;
+        curCharMode = None
+        start_index = 0
+
+        # 判断 当前字符 是否 属于 数字模式:
+        if curCharMode == None:
+            while(True):
+                is_numeric_mode_char = need_encode_data[start_index]
+                if ord(is_numeric_mode_char) >= ord('0') and ord(is_numeric_mode_char) <= ord('9'):
+                    curCharMode = numeric_mode
+                    start_index += 1
+                else:
+                    break
+
+        # 判断 当前字符 是否 属于 字母数字模式:
+        if curCharMode == None:
+            while(True):
+                is_alphanumeric_mode_char = need_encode_data[start_index]
+
+                # 大写字母 和 数字
+                if ( ord(is_alphanumeric_mode_char) >= ord('A') and ord(is_alphanumeric_mode_char) <= ord('Z')) or (ord(is_alphanumeric_mode_char) >= ord('0') and ord(is_alphanumeric_mode_char) <= ord('9')):
+                    curCharMode = alphanumeric_mode
+                    start_index += 1
+                else:
+                    break
+
+        # 剩下的 所有字符 使用 字节模式 编码:
+        if curCharMode == None:
+            curCharMode = byte_mode
+            start_index = len(need_encode_data)
+
+        if curCharMode != None:
+            # 获取 需要使用 当前模式 来编码的 字符串;
+            tmp_encode_data = data[has_encode_cnt:has_encode_cnt+start_index]
+
+            if curCharMode == numeric_mode:
+                bitstring += _encode_numeric_mode(tmp_encode_data)
+            elif curCharMode == alphanumeric_mode:
+                bitstring += _encode_alphanumeric_mode(tmp_encode_data)
+            else :
+                bitstring += _encode_byte_mode(tmp_encode_data)
+
+        logger.dbg("Mode + char-Cnt + Data=\n\t%r\n", convert_every8bit_str(bitstring))
+
+        # 统计已经 编码的数据
+        has_encode_cnt += start_index
+
+        # 判断 所有的数据 是否 已经全部编码 
+        if has_encode_cnt == len(data):
+            break
+
+            '''
+            sys.exit()
+            '''
+    if curEncodeMode == numeric_mode:#数字模式
         bitstring = _encode_numeric_mode(data)
-    elif curEncodeMode == 2:# 字母数字模式
+    elif curEncodeMode == alphanumeric_mode:# 字母数字模式
         bitstring = _encode_alphanumeric_mode(data)
+    elif curEncodeMode == mixed_mode:# 混合模式
+        pass
     else :# 字节模式
         bitstring = _encode_byte_mode(data)
+        
+    ###########################################
+    #                 end                     #
+    ###########################################
+
     #
     # 4. 添加终止符 [0000],
     #
@@ -996,17 +1071,18 @@ def qrcode(data, width=210, filename='QR-code'):
     Module public interface
     '''
     try:
-        if curEncodeMode == 1:#数字模式
+        if curEncodeMode == numeric_mode:#数字模式
             logger.dbg("use numeric mode")
             filename += "-numeric.png"
-        elif curEncodeMode == 2:# 字母数字模式
+        elif curEncodeMode == alphanumeric_mode:# 字母数字模式
             logger.dbg("use alphanumeric mode")
             filename += "-alphanumeric.png"
-        elif curEncodeMode == 3:# 混合模式
+        elif curEncodeMode == mixed_mode:# 混合模式
             logger.dbg("use mixed mode")
-        elif curEncodeMode == 4:# 汉字模式
+            filename += "-mixed.png"
+        elif curEncodeMode == chinese_mode:# 汉字模式
             logger.dbg("use chinese mode")
-        else :# 字节模式
+        else :# 默认, 字节模式
             logger.dbg("use byte mode")
             filename += "-byte.png"
 
@@ -1019,8 +1095,8 @@ def qrcode(data, width=210, filename='QR-code'):
 print "------------ end ------------"
 
 ################### main #####################
-#001-test
 '''
+#001-test
 test = [[ (i+j)%2 for i in range(8) ] for j in range(8)]
 _genImage(test, 240, 'test.png')
 
@@ -1059,5 +1135,5 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-qrcode('19AZ')
+qrcode('1986AZ5gh')
 
