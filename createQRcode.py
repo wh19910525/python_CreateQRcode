@@ -13,16 +13,28 @@ logger.ENABLE_DEBUG = True
 #logger.PRINT_BUILDTIME = True
 #logger.PRINT_FILENAME = True
 
+#########################
 numeric_mode        = 1
 alphanumeric_mode   = 2
 mixed_mode          = 3
 chinese_mode        = 4
 byte_mode           = 9
-#########################
-curEncodeMode = mixed_mode
 
+#########################
+#有效码字, 纠错码字, 纠错等级, 数据容量
+V1_L_Byte         = [19,  7, 01, 17]
+V1_L_Numeric      = [19,  7, 01, 41]
+V1_L_Alphanumeric = [19,  7, 01, 25]
+
+V1_M_Numeric      = [16, 10, 00, 34]
+
+#########################
+curEncodeMode = numeric_mode
+curVersionEC = V1_M_Numeric
+
+#########################
 #
-# value: 0 ~ 7
+# mask value: 0 ~ 7
 #
 force_use_specify_mask_id = None
 
@@ -308,6 +320,7 @@ def _rsGenPoly(nsym):
         g = _gfPolyMul(g, [1, _gfPow(2, i)])
     return g
 
+#zgj, 看 V1 M 和 V1 L 算法是否一样
 def _rsEncode(bitstring, nsym):
     '''
     添加 里德-所罗门码(Reed-Solomon)
@@ -562,11 +575,10 @@ def _fillFormatInfo(arg):
     #
     # 1. 计算 15位 格式信息
     #
-
-    # 01 is the format code for L error control level,
-    # concatenated with mask id and passed into _createFmtEncode
-    # to get the 15 bits format code with EC bits.
-    fmt = _createFmtEncode(int('01'+'{:03b}'.format(mask), 2))
+    # 例如: 01 is the format code for L error control level,
+    #           concatenated with mask id and passed into _createFmtEncode
+    #           to get the 15 bits format code with EC bits.
+    fmt = _createFmtEncode(int(str(curVersionEC[2])+'{:03b}'.format(mask), 2))
     #logger.dbg("fmt=%r", fmt)
 
     #
@@ -693,7 +705,7 @@ def _encode_alphanumeric_mode(data):
 
     #
     # 1. 添加 模式指示符;
-    # Byte mode: 0010.
+    # 字母数字 mode: 0010.
     #
     bitstring = '0010'
     logger.dbg("Mode=\n\t%r\n", bitstring)
@@ -737,7 +749,7 @@ def _encode_alphanumeric_mode(data):
         bitstring += converting_every_integer_to_binary
         data = data[2:]
 
-    logger.dbg("byte mode + char cnt + data=\n\t%r\n", convert_every8bit_str(bitstring))
+    logger.dbg("alphanumeric mode + char cnt + data=\n\t%r\n", convert_every8bit_str(bitstring))
 
     return bitstring
 
@@ -863,12 +875,15 @@ def _encode(data):
 
     bitstring = ''
     #
-    # 1. 检测输入的数据是否超过V1-L byte mode 的最大编码长度17,
+    # 1. 检测输入的数据是否超过 当前 数据模式 的最大码字 长度,
+    #
+    #       例如: V1-L 的 byte-mode 为 17个
+    #
     #       如果超过就抛出异常
     #
-    if len(data) > 17:
+    if len(data) > curVersionEC[3]:
         raise CapacityOverflowException(
-                'Error: Version 1 QR code[binary mode] encodes no more than 17 characters.')
+                'Error: Version 1 QR code[binary mode] encodes no more than %r characters.' % curVersionEC[3])
 
     #
     # 2. 使用 不用的模式来编码
@@ -886,7 +901,7 @@ def _encode(data):
     # 4. 添加终止符 [0000],
     #
     bitstring += '0000'
-    logger.dbg("mode + char cnt + data + terminater=\n\t%r\n", convert_every8bit_str(bitstring))
+    logger.dbg("Mode + char cnt + data + terminater=\n\t%r\n", convert_every8bit_str(bitstring))
 
     #
     # 5. 每8bit分为一组, 如果尾部数据不足8bit，则在尾部 填充0:
@@ -899,7 +914,7 @@ def _encode(data):
 
     bitstring += '0'*(8-len(last_str))
     #logger.dbg("last-str, len=%r, data=%r, append-0=%r", len(last_str), last_str, last_str+'0'*(8-len(last_str)))
-    logger.dbg("byte mode + char cnt + data + terminater + append str=\n\t%r\n", convert_every8bit_str(bitstring))
+    logger.dbg("Mode + char cnt + data + terminater + append str=\n\t%r\n", convert_every8bit_str(bitstring))
 
     res = list()
     #
@@ -914,25 +929,26 @@ def _encode(data):
     # 7. 如果编码后的数据不足版本及纠错级别的最大容量,
     #       则在尾部补充 "11101100" 和 "00010001"
     #
-    # V1-L 的 数据码字数: 19个
+    #       例如: V1-L 可存储 数据码字数: 19个
     #
-    while len(res) < 19:
+    while len(res) < curVersionEC[0]:
         res.append(int('11101100', 2))
         res.append(int('00010001', 2))
 
     #
-    # 8. 截取 前19个字符
+    # 8. 截取 当前 模式的 最大数据容量:
+    #       例如: V1 是 19个字符
     #
-    res = res[:19]
+    res = res[:curVersionEC[0]]
 
-    logger.dbg("value:1~19, data=\n\t%r\n", res)
+    logger.dbg("all data:[1~%d], value=\n\t%r\n", curVersionEC[0], res)
 
     #
     # 9. 添加 RS容错码;
     #
-    # V1-L 的 容错码字数: 7个
+    # 例如: V1-L 的 容错码字数: 7个
     #
-    return _rsEncode(res, 7)
+    return _rsEncode(res, curVersionEC[1])
 
 def _fillByte(byte, downwards=False):
     '''
@@ -995,9 +1011,10 @@ def _fillData(bitstream):
     '''
     将 数据填充到 一个临时的 矩阵模板中, 一个字节 占 8个点位,
 
-        V1-L: 一共有26个字节(encode 19 + rscode 7)
+        每一个 版本 由 encode和rscode 构成;
 
-    Fill the encoded data into the template QR code matrix
+        例如: V1-L: 一共有26个字节(encode 19 + rscode 7)
+
     '''
 
     #
@@ -1147,6 +1164,6 @@ logger.dbg("mask-id=%r", maskID)
 _genImage(_ver1, 210, 'test_ver1_func.png')
 
 '''
-#force_use_specify_mask_id = 1
-qrcode('1986AZ5gh, nexgo')
+force_use_specify_mask_id = 3
+qrcode('6220901138837345614')
 
